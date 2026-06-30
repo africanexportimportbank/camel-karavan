@@ -1,0 +1,170 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "karavan.fullname" . }}
+  labels:
+    {{- include "karavan.labels" . | nindent 4 }}
+    app: {{ include "karavan.fullname" . }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ include "karavan.fullname" . }}
+  template:
+    metadata:
+      labels:
+        {{- include "karavan.labels" . | nindent 8 }}
+        app: {{ include "karavan.fullname" . }}
+    spec:
+      serviceAccountName: {{ include "karavan.fullname" . }}
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.postgres.enabled }}
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              echo "Waiting for PostgreSQL at {{ include "karavan.postgres.fullname" . }}:5432 ...";
+              until nc -z {{ include "karavan.postgres.fullname" . }} 5432; do sleep 2; done;
+              echo "PostgreSQL is reachable.";
+      {{- end }}
+      containers:
+        - name: {{ include "karavan.fullname" . }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- if .Values.javaOptsAppend }}
+            # Extra JVM options. On EKS the pod has no IPv6 egress route, but public
+            # names (e.g. the OIDC IdP) resolve to AAAA first -> "Network is
+            # unreachable" and OIDC token exchange fails. preferIPv4Stack forces the
+            # JVM to use the reachable IPv4 address instead.
+            - name: JAVA_OPTS_APPEND
+              value: {{ .Values.javaOptsAppend | quote }}
+            {{- end }}
+            - name: KARAVAN_ENVIRONMENT
+              value: {{ .Values.environment | quote }}
+            # Git is per-project (each project configures its own repository +
+            # branch, pushed with the owning user's credentials). There is no
+            # global/ephemeral repository to configure here.
+            - name: KARAVAN_CONTAINER_STATUS_INTERVAL
+              value: {{ .Values.intervals.containerStatus | quote }}
+            - name: KARAVAN_CONTAINER_STATISTICS_INTERVAL
+              value: {{ .Values.intervals.containerStatistics | quote }}
+            - name: KARAVAN_CAMEL_STATUS_INTERVAL
+              value: {{ .Values.intervals.camelStatus | quote }}
+            - name: KARAVAN_DEVMODE_IMAGE
+              value: {{ .Values.devmodeImage | quote }}
+            - name: KARAVAN_CONTAINER_IMAGE_REGISTRY
+              value: {{ .Values.registry.server | quote }}
+            - name: KARAVAN_CONTAINER_IMAGE_GROUP
+              value: {{ .Values.registry.group | quote }}
+            {{- if .Values.postgres.enabled }}
+            - name: KARAVAN_DATASOURCE_URL
+              value: "jdbc:postgresql://{{ include "karavan.postgres.fullname" . }}:5432/{{ .Values.postgres.database }}"
+            - name: KARAVAN_DATASOURCE_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karavan.postgres.fullname" . }}
+                  key: POSTGRES_USER
+            - name: KARAVAN_DATASOURCE_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karavan.postgres.fullname" . }}
+                  key: POSTGRES_PASSWORD
+            - name: KARAVAN_DATASOURCE_SCHEMAS
+              value: "public"
+            {{- end }}
+            {{- if .Values.behindTlsProxy }}
+            # Behind a TLS-terminating proxy/ALB: trust X-Forwarded-* so Quarkus
+            # builds the OIDC redirect_uri with the public https origin (otherwise
+            # it uses the pod's http scheme -> Auth0 "callback URL mismatch").
+            - name: QUARKUS_HTTP_PROXY_PROXY_ADDRESS_FORWARDING
+              value: "true"
+            - name: QUARKUS_HTTP_PROXY_ALLOW_X_FORWARDED
+              value: "true"
+            - name: QUARKUS_HTTP_PROXY_ENABLE_FORWARDED_HOST
+              value: "true"
+            - name: QUARKUS_HTTP_PROXY_ENABLE_FORWARDED_PREFIX
+              value: "true"
+            {{- end }}
+            {{- if eq .Values.auth.type "oidc" }}
+            # ---- Auth0 OIDC via Backend-for-Frontend (server-side code flow + session cookie) ----
+            - name: PLATFORM_AUTH
+              value: "oidc"
+            - name: QUARKUS_OIDC_TENANT_ENABLED
+              value: "true"
+            # Resilient OIDC at boot: after a pod restart the IdP/egress is briefly
+            # unreachable while the pod network warms up. CONNECTION_DELAY makes the
+            # app retry OIDC discovery *during startup* (so the pod only becomes
+            # Ready once OIDC is reachable) instead of failing the first ~30s of
+            # auth'd requests; RETRY_COUNT/TIMEOUT harden the connection itself.
+            - name: QUARKUS_OIDC_CONNECTION_DELAY
+              value: "60S"
+            - name: QUARKUS_OIDC_CONNECTION_RETRY_COUNT
+              value: "5"
+            - name: QUARKUS_OIDC_CONNECTION_TIMEOUT
+              value: "10S"
+            - name: QUARKUS_OIDC_AUTH_SERVER_URL
+              value: {{ .Values.auth.oidc.authServerUrl | quote }}
+            # web-app => Quarkus runs the code flow and stores tokens in the session cookie.
+            - name: QUARKUS_OIDC_APPLICATION_TYPE
+              value: {{ .Values.auth.oidc.applicationType | quote }}
+            # Roles are read from the ID token (the Auth0 Action adds the namespaced
+            # roles claim there). Do NOT set quarkus.oidc.token.audience — it would
+            # be applied to the ID token (aud=client_id) and fail verification (401).
+            - name: QUARKUS_OIDC_ROLES_SOURCE
+              value: "idtoken"
+            - name: QUARKUS_OIDC_ROLES_ROLE_CLAIM_PATH
+              value: {{ printf "\"%s\"" .Values.auth.oidc.rolesClaim | quote }}
+            # RP-initiated logout via Auth0's /v2/logout (expects returnTo + client_id).
+            - name: QUARKUS_OIDC_END_SESSION_PATH
+              value: "/v2/logout"
+            - name: QUARKUS_OIDC_LOGOUT_POST_LOGOUT_URI_PARAM
+              value: "returnTo"
+            - name: QUARKUS_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karavan.oidc.secretName" . }}
+                  key: client-id
+            - name: QUARKUS_OIDC_CREDENTIALS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karavan.oidc.secretName" . }}
+                  key: client-secret
+            - name: QUARKUS_OIDC_LOGOUT_EXTRA_PARAMS_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "karavan.oidc.secretName" . }}
+                  key: client-id
+            {{- end }}
+            - name: KUBERNETES_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+          startupProbe:
+            httpGet:
+              path: /q/health/started
+              port: http
+            # Allow up to 5 minutes for first boot (image pull + Flyway migration).
+            periodSeconds: 5
+            failureThreshold: 60
+          readinessProbe:
+            httpGet:
+              path: /q/health/ready
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /q/health/live
+              port: http
+            periodSeconds: 15
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}

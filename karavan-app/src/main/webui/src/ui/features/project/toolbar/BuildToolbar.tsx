@@ -21,19 +21,24 @@ import {KaravanApi} from "@api/KaravanApi";
 import BuildIcon from "@patternfly/react-icons/dist/esm/icons/build-icon";
 import ClockIcon from "@patternfly/react-icons/dist/esm/icons/clock-icon";
 import TagIcon from "@patternfly/react-icons/dist/esm/icons/tag-icon";
-import {useProjectStore} from "@stores/ProjectStore";
+import {useAppConfigStore, useProjectStore} from "@stores/ProjectStore";
 import {EventBus} from "@features/project/designer/utils/EventBus";
 import {ContainerButton} from "@shared/ui/ContainerButton";
 import {useContainerStatusesStore} from "@stores/ContainerStatusesStore";
+import {requestRolloutAfterBuild} from "@services/NotificationService";
+import {shallow} from "zustand/shallow";
 
 export function BuildToolbar() {
 
     const [project] = useProjectStore((s) => [s.project]);
+    const [config] = useAppConfigStore((s) => [s.config], shallow);
     const {containers} = useContainerStatusesStore();
     const [isBuilding, setIsBuilding] = useState<boolean>(false);
     const [showDeleteConfirmation, setShowDeleteConfirmation] = useState<boolean>(false);
     const [deleteEntityName, setDeleteEntityName] = useState<string>();
     const [tag, setTag] = useState<string>('latest');
+
+    const isKubernetes = config.infrastructure === 'kubernetes';
 
     function deleteEntity() {
         const buildName = getBuildName();
@@ -44,8 +49,13 @@ export function BuildToolbar() {
         }
     }
 
-    function build() {
+    function build(rollout: boolean = false) {
         setIsBuilding(true);
+        // With rollout, register the project so NotificationService restarts the
+        // deployment once the build's image is loaded (k8s won't restart for :latest).
+        if (rollout) {
+            requestRolloutAfterBuild(project.projectId, config.environment);
+        }
         KaravanApi.buildProject(project, tag, res => {
             if (res.status === 200 || res.status === 201) {
                 setIsBuilding(false);
@@ -72,16 +82,28 @@ export function BuildToolbar() {
                         setDeleteEntityName(buildName);
                     }}>Delete</Button>
                 </Tooltip>}
-                <Tooltip content={"Build project"} position={"bottom"}>
+                <Tooltip content={"Build the image only (does not restart running pods)"} position={"bottom"}>
                     <Button isLoading={isBuilding ? true : undefined}
                             isDisabled={isBuilding || isRunning}
-                            variant="primary"
+                            variant={isKubernetes ? "secondary" : "primary"}
                             className="project-button dev-action-button"
                             icon={!isBuilding ? <BuildIcon/> : <div></div>}
-                            onClick={e => build()}>
+                            onClick={e => build(false)}>
                         {isBuilding ? "..." : "Build"}
                     </Button>
                 </Tooltip>
+                {isKubernetes &&
+                    <Tooltip content={"Build the image and roll out the deployment once it is ready"} position={"bottom"}>
+                        <Button isLoading={isBuilding ? true : undefined}
+                                isDisabled={isBuilding || isRunning}
+                                variant="primary"
+                                className="project-button dev-action-button"
+                                icon={!isBuilding ? <BuildIcon/> : <div></div>}
+                                onClick={e => build(true)}>
+                            {isBuilding ? "..." : "Build & Rollout"}
+                        </Button>
+                    </Tooltip>
+                }
             </div>
         )
     }

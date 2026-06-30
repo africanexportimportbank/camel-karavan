@@ -18,6 +18,7 @@ package org.apache.camel.karavan.kubernetes;
 
 import io.fabric8.kubernetes.api.model.*;
 import io.fabric8.kubernetes.api.model.apps.Deployment;
+import io.fabric8.kubernetes.api.model.apps.ReplicaSet;
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.kubernetes.client.KubernetesClientBuilder;
 import io.fabric8.kubernetes.client.dsl.LogWatch;
@@ -289,11 +290,48 @@ public class KubernetesService {
 
     public void deletePod(String name) {
         try (KubernetesClient client = kubernetesClient()) {
+            Pod pod = client.pods().inNamespace(getNamespace()).withName(name).get();
+            String deploymentName = ownerDeploymentName(client, pod);
+            if (deploymentName != null) {
+                // The pod is managed by a Deployment — deleting just the pod makes the
+                // Deployment immediately recreate it ("creates another one"). "Delete"
+                // on a deployment pod means undeploy: remove the Deployment + Service.
+                LOGGER.info("Pod " + name + " is managed by deployment " + deploymentName + "; deleting the deployment");
+                deleteDeployment(deploymentName);
+                return;
+            }
             LOGGER.info("Delete pod: " + name);
             client.pods().inNamespace(getNamespace()).withName(name).delete();
         } catch (Exception ex) {
             LOGGER.error(ex.getMessage());
         }
+    }
+
+    /**
+     * Resolves the Deployment that owns a pod (Pod -> ReplicaSet -> Deployment), or
+     * null for a standalone pod (e.g. the one-off build pod). Used so that deleting a
+     * deployment-managed pod undeploys the Deployment instead of being recreated.
+     */
+    private String ownerDeploymentName(KubernetesClient client, Pod pod) {
+        if (pod == null || pod.getMetadata() == null || pod.getMetadata().getOwnerReferences() == null) {
+            return null;
+        }
+        for (OwnerReference ref : pod.getMetadata().getOwnerReferences()) {
+            if ("Deployment".equals(ref.getKind())) {
+                return ref.getName();
+            }
+            if ("ReplicaSet".equals(ref.getKind())) {
+                ReplicaSet rs = client.apps().replicaSets().inNamespace(getNamespace()).withName(ref.getName()).get();
+                if (rs != null && rs.getMetadata().getOwnerReferences() != null) {
+                    for (OwnerReference rsRef : rs.getMetadata().getOwnerReferences()) {
+                        if ("Deployment".equals(rsRef.getKind())) {
+                            return rsRef.getName();
+                        }
+                    }
+                }
+            }
+        }
+        return null;
     }
 
     public List<String> getConfigMaps(String namespace) {
@@ -340,7 +378,7 @@ public class KubernetesService {
         return result;
     }
 
-    public void runDevModeContainer(String projectId, Boolean verbose, Boolean compile, Map<String, String> files, String projectDevmodeImage, String deploymentFragment, Map<String, String> labels, Map<String, String> envVars) {
+    public void runDevModeContainer(String projectId, Boolean verbose, Boolean compile, Map<String, String> files, String projectDevmodeImage, String deploymentFragment, Map<String, String> labels, Map<String, String> envVars, String runtime, String quarkusVersion) {
         Map<String, String> podLabels = new HashMap<>(labels);
         podLabels.putAll(getLabels(projectId, projectId, ContainerType.devmode));
 
@@ -350,7 +388,7 @@ public class KubernetesService {
             }
             Pod old = client.pods().inNamespace(getNamespace()).withName(projectId).get();
             if (old == null) {
-                Pod pod = getDevModePod(projectId, verbose, compile, podLabels, projectDevmodeImage, deploymentFragment, envVars);
+                Pod pod = getDevModePod(projectId, verbose, compile, podLabels, projectDevmodeImage, deploymentFragment, envVars, runtime, quarkusVersion);
                 Pod result = client.resource(pod).serverSideApply(); // important
                 result = client.pods().inNamespace(getNamespace()).withName(projectId).waitUntilReady(30, TimeUnit.SECONDS);
                 LOGGER.info("Pod " + result.getMetadata().getName() + " status " + result.getStatus());
@@ -399,7 +437,7 @@ public class KubernetesService {
                 .build();
     }
 
-    private Pod getDevModePod(String name, Boolean verbose, Boolean compile, Map<String, String> labels, String projectDevmodeImage, String deploymentFragment, Map<String, String> envVars) {
+    private Pod getDevModePod(String name, Boolean verbose, Boolean compile, Map<String, String> labels, String projectDevmodeImage, String deploymentFragment, Map<String, String> envVars, String runtime, String quarkusVersion) {
 
         Deployment deployment = Serialization.unmarshal(deploymentFragment, Deployment.class);
         PodSpec podSpec = null;
@@ -445,15 +483,31 @@ public class KubernetesService {
             environmentVariables.add(new EnvVarBuilder().withName(ENV_VAR_RUN_IN_COMPILE_MODE).withValue("true").build());
         }
 
-        Container container = new ContainerBuilder()
+        ContainerBuilder containerBuilder = new ContainerBuilder()
                 .withName(name)
                 .withImage(projectDevmodeImage != null ? projectDevmodeImage : devmodeImage)
                 .withPorts(port)
                 .withResources(resources)
                 .withImagePullPolicy(devmodeImagePullPolicy.orElse("IfNotPresent"))
                 .withEnv(environmentVariables)
-                .withVolumeMounts(volumeMounts)
-                .build();
+                .withVolumeMounts(volumeMounts);
+        // camel-main dev mode uses the image's default CMD (`camel run`, JBang, hot-reload).
+        // quarkus/spring-boot need an explicit `camel run --runtime=...` (mvn-based dev). Two
+        // tweaks make it work in the existing image: (1) wait for the /tmp/.karavan.done marker
+        // the orchestrator drops AFTER copying the project files, so the mvn-based runtimes start
+        // with the sources present (they don't hot-pick an initially-empty dir the way JBang does);
+        // (2) unset MAVEN_CONFIG (the image sets it to the repo dir, which Maven otherwise mis-reads
+        // as a lifecycle phase -> "Unknown lifecycle phase /karavan/.m2").
+        if (runtime != null && !CamelRuntime.CAMEL_MAIN.getValue().equals(runtime)) {
+            String quarkusVersionArg = (CamelRuntime.QUARKUS.getValue().equals(runtime) && quarkusVersion != null && !quarkusVersion.isBlank())
+                    ? " --quarkus-version=" + quarkusVersion : "";
+            String devCommand = "i=0; while [ ! -f /tmp/.karavan.done ] && [ $i -lt 120 ]; do sleep 0.5; i=$((i+1)); done; "
+                    + "unset MAVEN_CONFIG; "
+                    + "exec jbang -Dcamel.jbang.version=$CAMEL_VERSION camel@apache/camel run --source-dir=/karavan/code --runtime=" + runtime
+                    + quarkusVersionArg + " --console" + (Boolean.TRUE.equals(verbose) ? " --verbose" : "");
+            containerBuilder.withCommand("sh", "-c", devCommand);
+        }
+        Container container = containerBuilder.build();
 
         podSpec.setTerminationGracePeriodSeconds(0L);
         podSpec.setContainers(List.of(container));

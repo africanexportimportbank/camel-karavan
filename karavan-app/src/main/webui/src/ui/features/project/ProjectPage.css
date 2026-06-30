@@ -20,6 +20,14 @@
     height: 100%;
 }
 
+/* Holds the designer / project panel above the bottom console drawer; takes all
+   remaining height so the console can pin to the bottom of the panel. */
+.karavan .right-panel-card .project-main-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
 .karavan .project-page .scrollable-out {
     display: flex;
     flex-direction: column;

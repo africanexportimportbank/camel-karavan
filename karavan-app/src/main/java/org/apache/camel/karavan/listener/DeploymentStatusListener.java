@@ -19,13 +19,17 @@ package org.apache.camel.karavan.listener;
 
 import io.quarkus.vertx.ConsumeEvent;
 import io.vertx.core.json.JsonObject;
+import io.vertx.mutiny.core.eventbus.EventBus;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.karavan.cache.DeploymentStatus;
 import org.apache.camel.karavan.cache.KaravanCache;
 
+import java.util.Objects;
+
 import static org.apache.camel.karavan.KaravanEvents.DEPLOYMENT_DELETED;
 import static org.apache.camel.karavan.KaravanEvents.DEPLOYMENT_UPDATED;
+import static org.apache.camel.karavan.KaravanEvents.NOTIFICATION_STATUS_UPDATED;
 
 @ApplicationScoped
 public class DeploymentStatusListener {
@@ -33,16 +37,38 @@ public class DeploymentStatusListener {
     @Inject
     KaravanCache karavanCache;
 
+    @Inject
+    EventBus eventBus;
+
     @ConsumeEvent(value = DEPLOYMENT_DELETED, blocking = true, ordered = true)
     public void cleanDeploymentStatus(JsonObject data) {
         DeploymentStatus ds = data.mapTo(DeploymentStatus.class);
         karavanCache.deleteDeploymentStatus(ds);
         karavanCache.deleteCamelStatuses(ds.getProjectId(), ds.getEnv());
+        notifyStatusUpdated(ds.getProjectId(), ds.getEnv());
     }
 
     @ConsumeEvent(value = DEPLOYMENT_UPDATED, blocking = true, ordered = true)
     public void saveDeploymentStatus(JsonObject data) {
         DeploymentStatus ds = data.mapTo(DeploymentStatus.class);
+        DeploymentStatus old = karavanCache.getDeploymentStatus(ds.getProjectId(), ds.getEnv());
         karavanCache.saveDeploymentStatus(ds);
+        // Push only when the rollout state actually moves (new deployment or a change in
+        // desired/ready/unavailable replicas) so the UI tracks rollout progress live
+        // without refreshing on every no-op informer resync.
+        boolean changed = old == null
+                || !Objects.equals(old.getReplicas(), ds.getReplicas())
+                || !Objects.equals(old.getReadyReplicas(), ds.getReadyReplicas())
+                || !Objects.equals(old.getUnavailableReplicas(), ds.getUnavailableReplicas());
+        if (changed) {
+            notifyStatusUpdated(ds.getProjectId(), ds.getEnv());
+        }
+    }
+
+    private void notifyStatusUpdated(String projectId, String env) {
+        eventBus.publish(NOTIFICATION_STATUS_UPDATED, new JsonObject()
+                .put("type", "deployment")
+                .put("projectId", projectId)
+                .put("env", env));
     }
 }

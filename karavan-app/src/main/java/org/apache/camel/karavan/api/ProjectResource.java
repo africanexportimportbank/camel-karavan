@@ -88,11 +88,19 @@ public class ProjectResource extends AbstractApiResource {
     }
 
     @POST
+    @Authenticated
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response create(ProjectFolder projectFolder) {
+    public Response create(ProjectFolder projectFolder, @QueryParam("sample") boolean sample) {
         try {
-            return Response.ok(projectService.create(projectFolder)).build();
+            // A configured Git remote is owned by its creator (restricted to him).
+            String username = getIdentity().getString("username");
+            if (username != null && projectFolder.getGitRepository() != null && !projectFolder.getGitRepository().isBlank()) {
+                projectFolder.setGitOwner(username);
+            } else {
+                projectFolder.setGitOwner(null);
+            }
+            return Response.ok(projectService.create(projectFolder, sample)).build();
         } catch (Exception e) {
             return Response.status(Response.Status.CONFLICT).entity(e.getMessage()).build();
         }
@@ -104,22 +112,51 @@ public class ProjectResource extends AbstractApiResource {
     @Path("/{project}")
     public void delete(@PathParam("project") String project, @QueryParam("deleteContainers") boolean deleteContainers, @Context SecurityContext securityContext) throws Exception {
         String projectId = URLDecoder.decode(project, StandardCharsets.UTF_8);
-        if (deleteContainers) {
-            LOGGER.info("Deleting containers");
-            Response res1 = devModeResource.deleteDevMode(projectId, true);
-            Response res2 = containerResource.deleteContainer(projectId, ContainerType.devmode.name(), projectId);
-            Response res3 = containerResource.deleteContainer(projectId, ContainerType.packaged.name(), projectId);
-            LOGGER.info("Deleting deployments");
-            Response res4 = infrastructureResource.deleteDeployment(null, projectId);
+        // Capture the project + the acting user's git creds before cache eviction,
+        // so the git delete targets the project's own remote with the user's token.
+        ProjectFolder projectFolder = karavanCache.getProject(projectId);
+        if (projectFolder == null) {
+            // Already gone — deletion is idempotent, return 204 instead of NPE-ing.
+            LOGGER.info("Project " + projectId + " already deleted");
+            return;
         }
         var identity = getIdentity();
+        String username = identity.getString("username");
+        boolean hasRemote = gitService.hasRemote(projectFolder);
+        // A project's remote is restricted to its owner: a non-owner may not push
+        // a deletion commit to it (deny the whole delete to keep cache and remote
+        // consistent). This is the only legitimate failure of this endpoint.
+        if (hasRemote && projectFolder.getGitOwner() != null && !Objects.equals(projectFolder.getGitOwner(), username)) {
+            throw new WebApplicationException("Git remote is restricted to " + projectFolder.getGitOwner(), Response.Status.FORBIDDEN);
+        }
+        // Container/deployment cleanup is best-effort: a missing or unreachable
+        // container must not abort (and 500) the project deletion.
+        if (deleteContainers) {
+            try {
+                LOGGER.info("Deleting containers and deployments");
+                devModeResource.deleteDevMode(projectId, true);
+                containerResource.deleteContainer(projectId, ContainerType.devmode.name(), projectId);
+                containerResource.deleteContainer(projectId, ContainerType.packaged.name(), projectId);
+                infrastructureResource.deleteDeployment(null, projectId);
+            } catch (Exception e) {
+                LOGGER.warn("Container/deployment cleanup failed for " + projectId + ": " + e.getMessage());
+            }
+        }
+        UserGitConfig gitUser = karavanCache.getUserGitConfig(username);
         // delete from cache
         karavanCache.getProjectFiles(projectId).forEach(file -> karavanCache.deleteProjectFile(projectId, file.getName()));
         karavanCache.getProjectFilesCommited(projectId).forEach(file -> karavanCache.deleteProjectFileCommited(projectId, file.getName()));
         karavanCache.deleteProject(projectId);
         karavanCache.deleteProjectCommited(projectId);
-        // delete from git
-        gitService.deleteProject(projectId, identity.getString("username"), identity.getString("email"));
+        // Remote cleanup is best-effort: the project is already removed locally, so
+        // a push failure (auth, network, deleted remote) must not fail the request.
+        if (hasRemote) {
+            try {
+                gitService.deleteProject(projectFolder, username, identity.getString("email"), gitUser);
+            } catch (Exception e) {
+                LOGGER.warn("Git remote cleanup failed for " + projectId + ": " + e.getMessage());
+            }
+        }
         LOGGER.info("Project deleted");
     }
 
@@ -130,7 +167,7 @@ public class ProjectResource extends AbstractApiResource {
     @Path("/build/{tag}")
     public Response build(ProjectFolder projectFolder, @PathParam("tag") String tag) throws Exception {
         try {
-            projectService.buildProject(projectFolder, tag);
+            projectService.buildProject(projectFolder, tag, getIdentity().getString("username"));
             return Response.ok().entity(projectFolder).build();
         } catch (Exception e) {
             LOGGER.error(e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
@@ -184,6 +221,22 @@ public class ProjectResource extends AbstractApiResource {
             return Response.ok(statuses).build();
         } else {
             return Response.noContent().build();
+        }
+    }
+
+    @PUT
+    @Authenticated
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    @Path("/{projectId}/git")
+    public Response updateGit(@PathParam("projectId") String projectId, ProjectFolder body) {
+        try {
+            var updated = projectService.updateProjectGit(projectId, body.getGitRepository(), body.getGitBranch(), getIdentity().getString("username"));
+            return Response.ok(updated).build();
+        } catch (SecurityException e) {
+            return Response.status(Response.Status.FORBIDDEN).entity(e.getMessage()).build();
+        } catch (Exception e) {
+            return Response.status(Response.Status.NOT_FOUND).entity(e.getMessage()).build();
         }
     }
 

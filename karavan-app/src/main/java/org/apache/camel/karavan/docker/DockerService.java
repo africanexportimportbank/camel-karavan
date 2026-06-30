@@ -6,7 +6,7 @@ import com.github.dockerjava.api.model.*;
 import com.github.dockerjava.core.DefaultDockerClientConfig;
 import com.github.dockerjava.core.DockerClientConfig;
 import com.github.dockerjava.core.DockerClientImpl;
-import com.github.dockerjava.core.command.ExecStartResultCallback;
+import com.github.dockerjava.api.async.ResultCallback;
 import com.github.dockerjava.httpclient5.ApacheDockerHttpClient;
 import com.github.dockerjava.transport.DockerHttpClient;
 import io.quarkus.cache.CacheResult;
@@ -391,7 +391,16 @@ public class DockerService {
             Container container = containers.getFirst();
             if (container.getState().equals("running")) {
                 var execCreateCmdResponse = getDockerClient().execCreateCmd(container.getId()).withAttachStdout(true).withAttachStderr(true).withCmd(cmd.split("\\s+")).exec();
-                getDockerClient().execStartCmd(execCreateCmdResponse.getId()).exec(new ExecStartResultCallback(System.out, System.err)).awaitCompletion();
+                getDockerClient().execStartCmd(execCreateCmdResponse.getId()).exec(new ResultCallback.Adapter<Frame>() {
+                    @Override
+                    public void onNext(Frame frame) {
+                        if (frame.getStreamType() == StreamType.STDERR) {
+                            System.err.print(new String(frame.getPayload()));
+                        } else {
+                            System.out.print(new String(frame.getPayload()));
+                        }
+                    }
+                }).awaitCompletion();
             }
         }
     }

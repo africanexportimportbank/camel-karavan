@@ -19,7 +19,7 @@ import './ProjectPage.css';
 import {shallow} from "zustand/shallow";
 import {useNavigate, useParams} from "react-router-dom";
 import {useFilesStore, useFileStore, useProjectsStore, useProjectStore} from '@stores/ProjectStore';
-import {BUILD_IN_PROJECTS, Project} from '@models/ProjectModels';
+import {BUILD_IN_PROJECTS, Project, ProjectType} from '@models/ProjectModels';
 import {RightPanel} from "@shared/ui/RightPanel";
 import {ROUTES} from "@app/navigation/Routes";
 import {useProjectFunctions} from './ProjectContext';
@@ -28,6 +28,7 @@ import {ProjectContainersContextProvider} from "@features/project/ProjectContain
 import {Content} from "@patternfly/react-core";
 import {ProjectToolbar} from "@features/project/toolbar/ProjectToolbar";
 import {ProjectPanel} from "@features/project/ProjectPanel";
+import {BottomConsole} from "@features/project/console/BottomConsole";
 import {useDataPolling} from "@shared/polling/useDataPolling";
 import {useProjectPageStore} from "@features/project/ProjectPageStore";
 import {ErrorBoundaryWrapper} from "@shared/ui/ErrorBoundaryWrapper";
@@ -88,6 +89,9 @@ export function ProjectPage(props: ProjectPageProps): JSX.Element {
         return (<Content component="h2">Integration</Content>)
     }
 
+    const isBuildIn = BUILD_IN_PROJECTS.includes(project?.projectId);
+    const showConsole = !isBuildIn && project?.type === ProjectType.integration;
+
     return (
         <RightPanel
             title={title()}
@@ -99,10 +103,17 @@ export function ProjectPage(props: ProjectPageProps): JSX.Element {
             tools={<ProjectToolbar/>}
             mainPanel={
                 <div className="right-panel-card">
-                    <ErrorBoundaryWrapper onError={error => console.error(error)}>
-                        {showFilePanel && developerManager}
-                        {!showFilePanel && <ProjectPanel/>}
-                    </ErrorBoundaryWrapper>
+                    <div className="project-main-content">
+                        <ErrorBoundaryWrapper onError={error => console.error(error)}>
+                            {showFilePanel && developerManager}
+                            {!showFilePanel && <ProjectPanel/>}
+                        </ErrorBoundaryWrapper>
+                    </div>
+                    {showConsole &&
+                        <ProjectContainersContextProvider>
+                            <BottomConsole/>
+                        </ProjectContainersContextProvider>
+                    }
                 </div>
             }
         />

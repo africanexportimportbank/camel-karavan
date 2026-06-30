@@ -42,7 +42,9 @@ export function YamlEditor(props: CodeEditorProps) {
                 hover: true,
                 completion: true,
                 validate: true,
-                format: true,
+                format: {
+                    enable: true
+                },
                 schemas: [
                     {
                         uri: `http://internal/schema/${name}.json`,

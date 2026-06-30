@@ -9,7 +9,7 @@ import {shallow} from "zustand/shallow";
 import CompileIcon from "@patternfly/react-icons/dist/esm/icons/code-icon";
 import VerboseIcon from "@patternfly/react-icons/dist/esm/icons/list-icon";
 import "./DevModeToolbar.css"
-import StopIcon from "@patternfly/react-icons/dist/js/icons/stop-icon";
+import StopIcon from "@patternfly/react-icons/dist/esm/icons/stop-icon";
 import {ProjectContainersContext} from "../ProjectContainersContextProvider";
 import EllipsisVIcon from "@patternfly/react-icons/dist/esm/icons/ellipsis-v-icon";
 
@@ -39,6 +39,16 @@ export function DevModeToolbar() {
             setShowSpinner(false);
         }
     }, [devModeContainerStatus, refreshTrace]);
+
+    // Safety net: clear the spinner if no container appears (e.g. the start failed),
+    // so the Run button can't get stuck permanently disabled.
+    useEffect(() => {
+        if (!showSpinner) {
+            return;
+        }
+        const timeout = setTimeout(() => setShowSpinner(false), 15000);
+        return () => clearTimeout(timeout);
+    }, [showSpinner]);
 
     const [isToggleOpen, setIsToggleOpen] = React.useState(false);
 
@@ -73,6 +83,7 @@ export function DevModeToolbar() {
                         ref={toggleRef}
                         onClick={onToggleClick}
                         variant="plain"
+                        isDisabled={showSpinner}
                         isExpanded={isToggleOpen}
                         aria-label="Action list single group kebab"
                         icon={<EllipsisVIcon/>}
@@ -97,10 +108,14 @@ export function DevModeToolbar() {
         <div style={{display: 'flex', flexDirection: 'row', gap: '8px'}}>
             {!devModeIsRunning && !hasContainer() && !isProjectContainer && tabIndex !== "build" &&
                 <Tooltip content="Run in Developer mode" position={TooltipPosition.bottomEnd}>
+                    {/* Disable + spin immediately on click: the container status that
+                        drives inTransit lags, so without this a second click during the
+                        latency would start a second dev-mode run. */}
                     <Button className="dev-action-button"
-                            isDisabled={inTransit}
+                            isDisabled={inTransit || showSpinner}
+                            isLoading={showSpinner}
                             variant={"primary"}
-                            icon={<DevIcon/>}
+                            icon={showSpinner ? undefined : <DevIcon/>}
                             onClick={(ev) => runDevMode(ev, false, false)}>
                         Run
                     </Button>

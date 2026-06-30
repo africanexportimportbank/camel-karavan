@@ -1,14 +1,24 @@
 import axios from "axios";
 import {ErrorEventBus} from "@bus/ErrorEventBus";
 import {AccessPassword, AccessUser} from "@models/AccessModels";
-import {SsoApi} from "@api/auth/SsoApi"; // --- axios base ---
 
 // --- axios base ---
 axios.defaults.timeout = 30000;
 axios.defaults.headers.common["Accept"] = "application/json";
 axios.defaults.headers.common["Content-Type"] = "application/json";
 
-const instance = axios.create({ withCredentials: true });
+// X-Requested-With marks calls as XHR so the OIDC (BFF) backend answers an
+// expired/absent session with 401/499 instead of a cross-origin 302 to the IdP.
+// no-cache/no-store stops the browser from replaying a cached /ui/auth/me 401/499
+// after login — a stale cached auth response otherwise loops back to /auth/login.
+const instance = axios.create({
+    withCredentials: true,
+    headers: {
+        "X-Requested-With": "JavaScript",
+        "Cache-Control": "no-cache, no-store",
+        "Pragma": "no-cache",
+    },
+});
 
 // --- simple state (no tokens) ---
 let currentUser: AccessUser | null = null;
@@ -41,6 +51,13 @@ function isNoAuth(cfg: any) {
     );
 }
 
+// "No session" statuses: 401, plus 499 which Quarkus OIDC (java-script-auto-redirect=false)
+// returns to XHRs instead of a cross-origin 302. Single source of truth for both
+// the response interceptor and App.tsx's error handler.
+export function isUnauthorized(status?: number): boolean {
+    return status === 401 || status === 499;
+}
+
 // --- API surface (no tokens involved) ---
 export class AuthApi {
     static authType?: "session" | "oidc";
@@ -48,7 +65,7 @@ export class AuthApi {
         return instance;
     }
 
-    static async getMe(after: (user: AccessUser) => void) {
+    static async getMe(after: (user: AccessUser | null) => void) {
         instance
             .get("/ui/auth/me", { withCredentials: true })
             .then((res) => {
@@ -58,10 +75,11 @@ export class AuthApi {
                 }
             })
             .catch((err) => {
-                // 401 here means "not logged in"
+                // 401/499 here means "no session". Settle as logged-out so the
+                // app shows the login page (with the "Sign in with SSO" button);
+                // it must NOT auto-redirect to the IdP — only the button does.
                 setCurrentUser(null);
-                // optional: bubble error to a global bus/router
-                // ErrorEventBus.sendApiError(err);
+                after(null);
             });
     }
 
@@ -76,7 +94,7 @@ export class AuthApi {
                 if (res.status === 200) {
                     // server may return user; if not, fetch it
                     if (res.data?.username) {
-                        setCurrentUser(res.data.username);
+                        setCurrentUser(res.data);
                         after(true, res);
                     } else {
                         AuthApi.getMe(() => after(true, res));
@@ -125,19 +143,15 @@ export class AuthApi {
             });
     }
 
-    // Optional: keep if your UI still reads SSO config (even though auth is session-based)
-    static async getSsoConfig(after: (config: {}) => void) {
-        instance.get("/ui/auth/sso-config", { headers: { Accept: "application/json" } })
-            .then((res) => {
-                if (res.status === 200) after(res.data);
-            })
-            .catch((err) => {
-                ErrorEventBus.sendApiError(err);
-            });
-    }
+    private static interceptorsInstalled = false;
 
     static setAuthType(authType: "session" | "oidc") {
         this.authType = authType;
+        // getAuthType (hence setAuthType) can run more than once (React StrictMode
+        // double-mount, reloads); install the axios interceptors on the shared
+        // instance only once so they don't stack.
+        if (this.interceptorsInstalled) return;
+        this.interceptorsInstalled = true;
         switch (authType) {
             case "oidc":
                 AuthApi.setOidcAuthentication();
@@ -201,36 +215,17 @@ export class AuthApi {
     }
 
     static setOidcAuthentication() {
-        instance.interceptors.request.use(
-            async (config) => {
-                const token = SsoApi.keycloak?.token;
-                if (token) config.headers.Authorization = `Bearer ${token}`;
-                return config;
-            },
-            (error) => Promise.reject(error)
-        );
-
+        // BFF: the browser holds an HttpOnly session cookie set by Quarkus; the
+        // SPA never handles a token. On a lost/absent session (401, or 499 from
+        // java-script-auto-redirect=false) we ONLY clear the user — we do NOT
+        // auto-redirect to the IdP. The app then shows the login page with a
+        // "Sign in with SSO" button; only that click navigates to /auth/login.
+        // A 403 (insufficient role) propagates so the UI can show a permission error.
         instance.interceptors.response.use(
             (response) => response,
-            async (error) => {
-                const original = error.config;
-                if (!original || original._retry) return Promise.reject(error);
-
-                const status = error?.response?.status;
-                if ((status === 401 || status === 403) && SsoApi.keycloak) {
-                    original._retry = true;
-                    try {
-                        const refreshed = await SsoApi.keycloak.updateToken(30);
-                        if (refreshed) {
-                            original.headers = {
-                                ...original.headers,
-                                Authorization: `Bearer ${SsoApi.keycloak.token}`,
-                            };
-                            return instance(original);
-                        }
-                    } catch (e) {
-                        // fall-through
-                    }
+            (error) => {
+                if (isUnauthorized(error?.response?.status)) {
+                    setCurrentUser(null);
                 }
                 return Promise.reject(error);
             }

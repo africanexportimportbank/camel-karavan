@@ -15,11 +15,10 @@
  * limitations under the License.
  */
 
-import {SsoApi} from "@api/auth/SsoApi";
 import {EventStreamContentType, fetchEventSource} from "@microsoft/fetch-event-source";
 import {EventSourceMessage} from "@microsoft/fetch-event-source/lib/cjs/parse";
 import {KaravanEvent, NotificationEventBus} from "@services/NotificationService";
-import {AuthApi, getCurrentUser} from "@api/auth/AuthApi";
+import {getCurrentUser} from "@api/auth/AuthApi";
 
 export class NotificationApi {
 
@@ -42,10 +41,8 @@ export class NotificationApi {
 
     static async notification(controller: AbortController) {
         const fetchData = async () => {
+            // BFF: SSE is authenticated by the session cookie (credentials:"include").
             const headers: any = { Accept: "text/event-stream" };
-            if (AuthApi.authType === 'oidc' && SsoApi.keycloak?.token && SsoApi.keycloak?.token?.length > 0) {
-                headers.Authorization = "Bearer " + SsoApi.keycloak?.token;
-            }
             if (getCurrentUser()) {
                 NotificationApi.fetch('/ui/notification/system/' + getCurrentUser()?.username, controller, headers,
                     ev => NotificationApi.onSystemMessage(ev));

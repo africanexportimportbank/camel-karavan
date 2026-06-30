@@ -1,0 +1,170 @@
+/*
+ * Licensed to the Apache Software Foundation (ASF) under one or more
+ * contributor license agreements.  See the NOTICE file distributed with
+ * this work for additional information regarding copyright ownership.
+ * The ASF licenses this file to You under the Apache License, Version 2.0
+ * (the "License"); you may not use this file except in compliance with
+ * the License.  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
+
+.karavan .bottom-console {
+    display: flex;
+    flex-direction: column;
+    flex: 0 0 auto;
+    min-height: 0;
+    border-top: 1px solid var(--pf-t--global--border--color--default);
+}
+
+.karavan .bottom-console.expanded {
+    /* Compact, fixed share of the panel height; the designer keeps the rest. */
+    flex: 0 0 40vh;
+}
+
+.karavan .bottom-console .bottom-console-body {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* The PatternFly LogViewer fills the drawer body; its header hosts our merged strip. */
+.karavan .bottom-console .bottom-console-body .pf-v6-c-log-viewer {
+    height: 100%;
+}
+
+/* Drop the log viewer's default header padding so the strip sits flush. */
+.karavan .bottom-console .bottom-console-body .pf-v6-c-log-viewer__header {
+    padding: 0;
+}
+
+/* ── The single merged control strip ─────────────────────────────────────────
+   Tabs + run/build actions + log controls + collapse, all on one dense row.
+   When expanded it is the log viewer's toolbar; when collapsed it stands alone. */
+.karavan .bottom-console .console-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+    min-height: 38px;
+    padding: 4px 8px;
+    background: var(--pf-t--global--background--color--secondary--default);
+    color: var(--pf-t--global--text--color--regular);
+    border-bottom: 1px solid var(--pf-t--global--border--color--default);
+}
+
+/* Eats the slack so log controls + collapse sit hard right. */
+.karavan .bottom-console .console-grow {
+    flex: 1 1 auto;
+}
+
+/* Hairline rules between logical groups (tabs · actions … controls · collapse). */
+.karavan .bottom-console .console-sep {
+    align-self: stretch;
+    width: 1px;
+    margin: 7px 2px;
+    background: var(--pf-t--global--border--color--default);
+}
+
+.karavan .bottom-console .console-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.karavan .bottom-console .console-logcontrols {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+/* Slim find box — labels elsewhere become tooltips, so the strip stays narrow. */
+.karavan .bottom-console .console-search {
+    width: 200px;
+}
+
+/* Icon toggles (wrap / follow / clear / collapse): tight, quiet until active. */
+.karavan .bottom-console .console-toggle {
+    padding: 4px;
+    min-width: 30px;
+    color: var(--pf-t--global--icon--color--subtle);
+}
+
+.karavan .bottom-console .console-toggle:hover {
+    color: var(--pf-t--global--icon--color--regular);
+}
+
+.karavan .bottom-console .console-toggle.is-on {
+    color: var(--pf-t--global--icon--color--brand--default);
+}
+
+/* Run / Reload / Stop / Delete / Build: compact, squared buttons that match the
+   height and corner radius of the tabs + search, so the primary action sits in the
+   dense strip instead of towering over it as a full-height pill. */
+.karavan .bottom-console .console-actions .pf-v6-c-button {
+    /* Flex-center the icon + label so the text sits dead-centre at 28px height
+       (removing padding-block alone left the label vertically offset). */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    min-height: 28px;
+    padding-block: 0;
+    padding-inline: 12px;
+    border-radius: 6px;
+    font-size: var(--pf-t--global--font--size--sm);
+    line-height: 1;
+    white-space: nowrap;
+}
+
+/* Icon-only action buttons (stop/delete/reload) stay square. */
+.karavan .bottom-console .console-actions .pf-v6-c-button.pf-m-control,
+.karavan .bottom-console .console-actions .pf-v6-c-button.pf-m-secondary {
+    padding-inline: 10px;
+}
+
+/* The "run options" kebab toggle, sized + aligned to the action buttons. */
+.karavan .bottom-console .console-actions .pf-v6-c-menu-toggle {
+    height: 28px;
+    min-height: 28px;
+    padding-block: 0;
+    padding-inline: 4px;
+    border-radius: 6px;
+}
+
+/* Live run/build indicator: a small pulsing dot instead of a wide label. */
+.karavan .bottom-console .console-status {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex: 0 0 auto;
+}
+
+.karavan .bottom-console .console-status.is-run {
+    background: var(--pf-t--global--color--status--success--default);
+    animation: console-status-pulse 1.6s ease-in-out infinite;
+}
+
+.karavan .bottom-console .console-status.is-build {
+    background: var(--pf-t--global--color--status--info--default);
+    animation: console-status-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes console-status-pulse {
+    0%, 100% { opacity: 0.35; }
+    50%      { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .karavan .bottom-console .console-status {
+        animation: none;
+    }
+}

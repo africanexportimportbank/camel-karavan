@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {Button, TextInputGroup, TextInputGroupMain, TextInputGroupUtilities, Tooltip, TooltipPosition,} from '@patternfly/react-core';
+import {Button, TextInputGroup, TextInputGroupMain, TextInputGroupUtilities,} from '@patternfly/react-core';
 import {SearchIcon} from '@patternfly/react-icons';
 import {useAppConfigStore, useProjectStore} from "@stores/ProjectStore";
 import {Project} from "@models/ProjectModels";
@@ -10,9 +10,7 @@ import {useSearchStore} from "@stores/SearchStore";
 import {useDebounceValue} from "usehooks-ts";
 import {SearchApi} from "@api/SearchApi";
 import TimesIcon from "@patternfly/react-icons/dist/esm/icons/times-icon";
-import PullIcon from "@patternfly/react-icons/dist/esm/icons/code-branch-icon";
 import {UploadProjectModal} from "@features/projects/UploadProjectModal";
-import {ModalConfirmation} from "@shared/ui/ModalConfirmation";
 
 export function ProjectsToolbar() {
 
@@ -20,7 +18,6 @@ export function ProjectsToolbar() {
     const [setProject] = useProjectStore((s) => [s.setProject], shallow)
     const [showUpload, setShowUpload] = useState<boolean>(false);
     const [debouncedSearch] = useDebounceValue(search, 300);
-    const [pullIsOpen, setPullIsOpen] = useState(false);
     const [config] = useAppConfigStore((s) => [s.config], shallow);
     const isDev = config.environment === 'dev';
 
@@ -65,13 +62,6 @@ export function ProjectsToolbar() {
 
     return (
         <div className="project-files-toolbar" style={{justifyContent: "flex-end"}}>
-            <Tooltip content='Pull new Integrations from git' position={TooltipPosition.left}>
-                <Button icon={<PullIcon/>}
-                        variant={"link"}
-                        isDanger
-                        onClick={e => setPullIsOpen(true)}
-                />
-            </Tooltip>
             <Button icon={<RefreshIcon/>}
                     variant={"link"}
                     onClick={e => ProjectService.refreshProjects()}
@@ -90,16 +80,6 @@ export function ProjectsToolbar() {
                 </Button>
             }
             {showUpload && <UploadProjectModal open={showUpload} onClose={() => setShowUpload(false)}/>}
-            <ModalConfirmation isOpen={pullIsOpen}
-                               message='Pull new Integrations from Git!'
-                               onConfirm={() => {
-                                   ProjectService.pullAllProjects();
-                                   setPullIsOpen(false);
-                               }}
-                               onCancel={() => setPullIsOpen(false)}
-                               btnConfirmVariant='danger'
-                               btnConfirm='Confirm Pull'
-            />
         </div>
     )
 }

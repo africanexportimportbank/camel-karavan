@@ -47,9 +47,13 @@ yarn-error.log*
 *.orig
 *.rej
 
-# Local environment
+# Local environment & secrets — real values live only in .env (NEVER commit).
+# Keep .env.example (the template) tracked.
 .camel-jbang
 .env
+.env.local
+.env.*.local
+!.env.example
 /.java-version
 /keys/*
 *.jar
@@ -82,5 +86,15 @@ docs/install/karavan-docker/data/*
 
 **/dependency-reduced-pom.xml
 
-.env
 stats.html
+
+.claude/
+CLAUDE.md
+# Account-specific deploy artifacts (AWS account id / cluster ARNs / hostnames).
+# Keep deploy/helm/karavan/values-eks.example.yaml as the committed template.
+deploy/eks/
+deploy/helm/karavan/values-eks.yaml
+deploy/helm/karavan/values-auth0.yaml
+
+# local debug log
+logs.txt

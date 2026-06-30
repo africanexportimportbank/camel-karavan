@@ -441,7 +441,9 @@ export function DslConnections() {
 
         const radX = gapX > DIAMETER ? 20 : gapX / 2;
         const radY = gapY > DIAMETER ? 20 : gapY / 2;
-        const endY = rect2.y - top - radY - (toHeader ? 9 : 6);
+        // End the path one arrowhead-length (11px, userSpaceOnUse) above the target so the
+        // arrowhead tip lands AT the node edge instead of stabbing inside it.
+        const endY = rect2.y - top - radY - 11;
 
         const iRadX = startX > endX ? -1 * radX : radX;
         const iRadY = startY > endY ? -1 * radY : radY;
@@ -482,13 +484,13 @@ export function DslConnections() {
                  style={{width: width, height: height, position: "absolute", left: 0, top: 0}}
                  viewBox={"0 0 " + (width) + " " + (height)}>
                 <defs key='defs'>
-                    <marker key='maker1' id="arrowheadRight" markerWidth="9" markerHeight="6" refX="0" refY="3" orient="auto"
+                    <marker key='maker1' id="arrowheadRight" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="8" refX="0" refY="4" orient="auto"
                             className="arrow">
-                        <polygon points="0 0, 9 3, 0 6"/>
+                        <polygon points="0 0, 11 4, 0 8"/>
                     </marker>
-                    <marker key='maker2' id="arrowheadLeft" markerWidth="9" markerHeight="6" refX="0" refY="3" orient="auto"
+                    <marker key='maker2' id="arrowheadLeft" markerUnits="userSpaceOnUse" markerWidth="11" markerHeight="8" refX="0" refY="4" orient="auto"
                             className="arrow">
-                        <polygon points="9 0, 0 3, 9 6"/>
+                        <polygon points="11 0, 0 4, 11 8"/>
                     </marker>
                 </defs>
                 {stepsArray.map(pos => getCircle(pos))}

@@ -4,7 +4,7 @@ import {CamelIcon} from "@features/project/designer/icons/KaravanIcons";
 import './PlatformLogos.css'
 import {useBrandStore} from "@stores/BrandStore";
 
-export const CAMEL_VERSION = "4.18.1";
+export const CAMEL_VERSION = "4.18.2";
 
 interface PlatformVersionProps {
     environment: string

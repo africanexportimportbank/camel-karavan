@@ -65,6 +65,9 @@ public class ConfigService {
     @ConfigProperty(name = "karavan.secret.name", defaultValue = "karavan")
     String secretName;
 
+    @ConfigProperty(name = "karavan.default-runtime", defaultValue = "camel-main")
+    String defaultRuntime;
+
     @Inject
     KaravanCache karavanCache;
 
@@ -101,6 +104,7 @@ public class ConfigService {
                     configFilenames,
                     advanced
             );
+            configuration.setDefaultRuntime(defaultRuntime);
         }
         return configuration;
     }

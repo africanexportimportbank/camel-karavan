@@ -5,7 +5,7 @@ import {AccessUser} from "@models/AccessModels";
 import {useAccessStore} from "@stores/AccessStore";
 import {shallow} from "zustand/shallow";
 import {AccessApi} from "@api/AccessApi";
-import DeleteIcon from "@patternfly/react-icons/dist/js/icons/times-icon";
+import DeleteIcon from "@patternfly/react-icons/dist/esm/icons/times-icon";
 import {AccessService} from "@services/AccessService";
 import {ModalConfirmation} from "@shared/ui/ModalConfirmation";
 import {PauseIcon, PlayIcon, UserSecretIcon} from "@patternfly/react-icons";

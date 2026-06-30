@@ -1,0 +1,74 @@
+{{- if .Values.ingress.enabled }}
+{{- /*
+  Dedicated internal ALB for Karavan, provisioned by THIS cluster's AWS Load
+  Balancer Controller. Two Ingresses share one unique IngressGroup so they land on
+  a single ALB our controller fully owns — unlike the previously-shared trade ALB,
+  whose rules were periodically pruned by the other cluster's controller (-> 404).
+  Subnets are passed explicitly because none carry the internal-elb discovery tag.
+*/ -}}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "karavan.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "karavan.labels" . | nindent 4 }}
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/group.name: {{ .Values.ingress.groupName | quote }}
+    alb.ingress.kubernetes.io/subnets: {{ .Values.ingress.subnets | quote }}
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: {{ .Values.ingress.certificateArn | quote }}
+    alb.ingress.kubernetes.io/healthcheck-path: /q/health/ready
+    alb.ingress.kubernetes.io/healthcheck-port: {{ .Values.service.targetPort | quote }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | default "alb" }}
+  rules:
+    - host: {{ .Values.ingress.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "karavan.fullname" . }}
+                port:
+                  number: {{ .Values.service.port }}
+{{- if .Values.ingress.registry.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "karavan.fullname" . }}-registry
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "karavan.labels" . | nindent 4 }}
+  annotations:
+    alb.ingress.kubernetes.io/scheme: internal
+    alb.ingress.kubernetes.io/target-type: ip
+    # Same group.name -> shares the single dedicated ALB with the app Ingress above.
+    alb.ingress.kubernetes.io/group.name: {{ .Values.ingress.groupName | quote }}
+    alb.ingress.kubernetes.io/subnets: {{ .Values.ingress.subnets | quote }}
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP":80},{"HTTPS":443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: '443'
+    alb.ingress.kubernetes.io/certificate-arn: {{ .Values.ingress.certificateArn | quote }}
+    # The Distribution registry answers /v2/ with 200 (unauthenticated) -> health check.
+    alb.ingress.kubernetes.io/healthcheck-path: /v2/
+    alb.ingress.kubernetes.io/healthcheck-port: {{ .Values.registry.inCluster.port | quote }}
+spec:
+  ingressClassName: {{ .Values.ingress.className | default "alb" }}
+  rules:
+    - host: {{ .Values.ingress.registry.host | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ .Values.registry.inCluster.serviceName }}
+                port:
+                  number: {{ .Values.registry.inCluster.port }}
+{{- end }}
+{{- end }}

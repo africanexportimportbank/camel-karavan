@@ -118,9 +118,9 @@ export class KaravanApi {
         });
     }
 
-    static async postProject(project: Project, after: (result: boolean, res: AxiosResponse<Project> | any) => void) {
+    static async postProject(project: Project, after: (result: boolean, res: AxiosResponse<Project> | any) => void, sample?: boolean) {
         try {
-            instance.post('/ui/project', project)
+            instance.post('/ui/project' + (sample ? '?sample=true' : ''), project)
                 .then(res => {
                     if (res.status === 200) {
                         after(true, res);
@@ -373,6 +373,24 @@ export class KaravanApi {
 
     static async pull(projectId: string | undefined, after: (res: AxiosResponse<any> | any) => void) {
         instance.put(`/ui/git/${projectId ?? ''}`)
+            .then(res => {
+                after(res);
+            }).catch(err => {
+            after(err);
+        });
+    }
+
+    static async fetchBranches(repository: string, after: (res: AxiosResponse<any> | any) => void) {
+        instance.post('/ui/git/branches', {repository: repository})
+            .then(res => {
+                after(res);
+            }).catch(err => {
+            after(err);
+        });
+    }
+
+    static async updateProjectGit(projectId: string, gitRepository: string | undefined, gitBranch: string | undefined, after: (res: AxiosResponse<any> | any) => void) {
+        instance.put(`/ui/project/${encodeURIComponent(projectId)}/git`, {gitRepository: gitRepository, gitBranch: gitBranch})
             .then(res => {
                 after(res);
             }).catch(err => {

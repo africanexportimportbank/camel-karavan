@@ -37,8 +37,8 @@ import {
     TextInputGroupUtilities
 } from "@patternfly/react-core";
 import "./form-util.css"
-import ShowIcon from "@patternfly/react-icons/dist/js/icons/eye-icon";
-import HideIcon from "@patternfly/react-icons/dist/js/icons/eye-slash-icon";
+import ShowIcon from "@patternfly/react-icons/dist/esm/icons/eye-icon";
+import HideIcon from "@patternfly/react-icons/dist/esm/icons/eye-slash-icon";
 import {hasDigit, hasLowercase, hasMinimumLength, hasSpecialCharacter, hasUppercase} from "./StringUtils";
 
 export function useFormUtil(formContext: UseFormReturn<any>) {

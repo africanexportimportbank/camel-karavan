@@ -42,9 +42,22 @@ public class NotificationListener {
     public static final String EVENT_CONFIG_SHARED = "configShared";
     public static final String EVENT_IMAGES_LOADED = "imagesLoaded";
     public static final String EVENT_PROJECT_CHANGED = "projectChanged";
+    public static final String EVENT_CONTAINERS_UPDATED = "containersUpdated";
+    public static final String EVENT_DEPLOYMENTS_UPDATED = "deploymentsUpdated";
 
     @Inject
     EventBus eventBus;
+
+    // Cache listeners (PodContainerStatusListener / DeploymentStatusListener) publish
+    // NOTIFICATION_STATUS_UPDATED when a container or deployment status actually changes.
+    // Fan it out as a system SSE event so every connected SPA refreshes immediately.
+    @ConsumeEvent(value = NOTIFICATION_STATUS_UPDATED, blocking = true)
+    public void onStatusUpdated(JsonObject event) {
+        String eventName = "deployment".equals(event.getString("type"))
+                ? EVENT_DEPLOYMENTS_UPDATED
+                : EVENT_CONTAINERS_UPDATED;
+        sendSystem(null, eventName, "status", event);
+    }
 
     @ConsumeEvent(value = NOTIFICATION_ERROR, blocking = true, ordered = true)
     public void onErrorHappened(JsonObject event) throws Exception {

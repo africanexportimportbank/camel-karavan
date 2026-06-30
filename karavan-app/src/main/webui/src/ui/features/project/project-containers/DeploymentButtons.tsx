@@ -131,7 +131,7 @@ export function DeploymentButtons (props: Props) {
             }
             {showRolloutConfirmation &&
                 <ModalConfirmation
-                    isOpen={showDeleteConfirmation}
+                    isOpen={showRolloutConfirmation}
                     message={"Rollout deployment " + project.projectId + "?"}
                     btnConfirm='Rollout'
                     btnConfirmVariant='primary'
@@ -141,12 +141,12 @@ export function DeploymentButtons (props: Props) {
                             setShowRolloutConfirmation(false);
                         }
                     }}
-                    onCancel={() => setShowDeleteConfirmation(false)}
+                    onCancel={() => setShowRolloutConfirmation(false)}
                 />
             }
             {showDeployConfirmation &&
                 <ModalConfirmation
-                    isOpen={showDeleteConfirmation}
+                    isOpen={showDeployConfirmation}
                     message={"Deploy " + project.projectId + "?"}
                     btnConfirm='Deploy'
                     btnConfirmVariant='primary'
@@ -156,7 +156,7 @@ export function DeploymentButtons (props: Props) {
                             setShowDeployConfirmation(false);
                         }
                     }}
-                    onCancel={() => setShowDeleteConfirmation(false)}
+                    onCancel={() => setShowDeployConfirmation(false)}
                 />
             }
         </div>

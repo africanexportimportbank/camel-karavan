@@ -4,17 +4,13 @@ services:
 
   karavan:
     container_name: karavan
-    image: ghcr.io/apache/camel-karavan:4.18.1
+    image: ghcr.io/apache/camel-karavan:4.18.2
     ports:
       - "8080:8080"
     environment:
-      # Git Repository Configurations
-      # Karavan uses a Git repository as the single source of truth for all projects.
-      # It stores Camel YAML, properties, and deployment resources here.
-      - KARAVAN_GIT_REPOSITORY= # The URL of your Git repository (e.g., https://github.com/youruser/your-repo.git)
-      - KARAVAN_GIT_USERNAME=   # Your Git username
-      - KARAVAN_GIT_PASSWORD=   # Your Git password or a Personal Access Token (PAT) with read/write access
-      - KARAVAN_GIT_BRANCH=main # The branch Karavan should use
+      # Git is per-project: each project configures its own repository + branch in
+      # the UI and is pushed/pulled with the owning user's credentials
+      # (System -> Git). There is no global Git repository to configure here.
 
       # Image Registry Configurations
       # Karavan needs an image registry to store the container images it builds.

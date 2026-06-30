@@ -27,14 +27,17 @@ import PushIcon from "@patternfly/react-icons/dist/esm/icons/code-branch-icon";
 import RefreshIcon from "@patternfly/react-icons/dist/esm/icons/sync-alt-icon";
 import {getShortCommit, isEmpty} from "@util/StringUtils";
 import {ProjectTitle} from "@features/project/ProjectTitle";
+import {ProjectGitModal} from "@features/project/files/ProjectGitModal";
 import {FileSearchToolbarItem} from "@features/project/FileSearchToolbarItem";
 import TimeAgo from "javascript-time-ago";
 import {useCommitsStore} from "@stores/CommitsStore";
 import {BUILD_IN_PROJECTS} from "@models/ProjectModels";
+import {AuthContext} from "@api/auth/AuthProvider";
 
 export function FilesToolbar() {
 
     const {fetchProjectCommits} = useCommitsStore();
+    const {user} = React.useContext(AuthContext);
     const [config] = useAppConfigStore((s) => [s.config], shallow);
     const [project, isPushing, isPulling] = useProjectStore((s) => [s.project, s.isPushing, s.isPulling], shallow)
     const [projectsCommited] = useProjectsStore((s) => [s.projectsCommited], shallow)
@@ -42,11 +45,18 @@ export function FilesToolbar() {
     const [file, setFile] = useFileStore((s) => [s.file, s.setFile], shallow)
     const [commitMessageIsOpen, setCommitMessageIsOpen] = useState(false);
     const [pullIsOpen, setPullIsOpen] = useState(false);
+    const [gitModalOpen, setGitModalOpen] = useState(false);
     const [commitMessage, setCommitMessage] = useState('');
     const isDev = config.environment === 'dev';
     const timeAgo = new TimeAgo('en-US');
     const [diff, selectedFileNames, selector, setSelector] = useFilesStore((s) => [s.diff, s.selectedFileNames, s.selector, s.setSelector], shallow);
     const isCommitsTab = selector === "commits";
+    // A project's Git remote is restricted to its owner. Unconfigured remotes can
+    // be set up by anyone (they become the owner); push/pull require a remote.
+    const hasRemote = !!project.gitRepository;
+    const isGitOwner = !project.gitOwner || project.gitOwner === user?.username;
+    const canConfigureGit = isGitOwner;
+    const canPushPull = hasRemote && isGitOwner;
 
     const projectCommited = projectsCommited?.find(p => project.projectId);
 
@@ -196,11 +206,22 @@ export function FilesToolbar() {
             />
             <FileSearchToolbarItem disabled={isCommitsTab}/>
             {getLastUpdatePanel()}
-            <Tooltip content="Pull from git" position={"bottom-end"}>
+            {!isBuildInProject() && canConfigureGit &&
+                <Tooltip content="Configure this project's Git repository and branch" position={"bottom-end"}>
+                    <Button variant="secondary"
+                            isDisabled={isCommitsTab}
+                            className="project-button dev-action-button"
+                            onClick={() => setGitModalOpen(true)}>
+                        Git
+                    </Button>
+                </Tooltip>
+            }
+            <ProjectGitModal project={project} isOpen={gitModalOpen} onClose={() => setGitModalOpen(false)}/>
+            <Tooltip content={hasRemote ? "Pull from git" : "Configure a Git repository first"} position={"bottom-end"}>
                 <Button isLoading={isPulling ? true : undefined}
                         variant={"secondary"}
                         isDanger
-                        isDisabled={isCommitsTab}
+                        isDisabled={isCommitsTab || !canPushPull}
                         className="project-button dev-action-button"
                         onClick={() => {
                             setPullIsOpen(true);
@@ -208,9 +229,9 @@ export function FilesToolbar() {
                     {isPulling ? "..." : "Pull"}
                 </Button>
             </Tooltip>
-            <Tooltip content="Commit and push to git" position={"bottom-end"}>
+            <Tooltip content={hasRemote ? "Commit and push to git" : "Configure a Git repository first"} position={"bottom-end"}>
                 <Button isLoading={isPushing ? true : undefined}
-                        isDisabled={!isDev || selectedFileNames.length === 0 || isCommitsTab}
+                        isDisabled={!isDev || selectedFileNames.length === 0 || isCommitsTab || !canPushPull}
                         variant={"secondary"}
                         className="project-button dev-action-button"
                         onClick={() => {

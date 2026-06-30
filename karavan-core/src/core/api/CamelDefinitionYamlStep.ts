@@ -3126,6 +3126,13 @@ export class CamelDefinitionYamlStep {
                def.tarFile = CamelDefinitionYamlStep.readTarFileDataFormat(element.tarFile); 
             } 
         } 
+        if (element?.pqc !== undefined) { 
+            if (Array.isArray(element.pqc)) { 
+               def.pqc = CamelDefinitionYamlStep.readPQCDataFormat(element.pqc[0]); 
+            } else { 
+               def.pqc = CamelDefinitionYamlStep.readPQCDataFormat(element.pqc); 
+            } 
+        } 
         if (element?.csv !== undefined) { 
             if (Array.isArray(element.csv)) { 
                def.csv = CamelDefinitionYamlStep.readCsvDataFormat(element.csv[0]); 
@@ -3194,6 +3201,13 @@ export class CamelDefinitionYamlStep {
                def.smooks = CamelDefinitionYamlStep.readSmooksDataFormat(element.smooks[0]); 
             } else { 
                def.smooks = CamelDefinitionYamlStep.readSmooksDataFormat(element.smooks); 
+            } 
+        } 
+        if (element?.ocsf !== undefined) { 
+            if (Array.isArray(element.ocsf)) { 
+               def.ocsf = CamelDefinitionYamlStep.readOcsfDataFormat(element.ocsf[0]); 
+            } else { 
+               def.ocsf = CamelDefinitionYamlStep.readOcsfDataFormat(element.ocsf); 
             } 
         } 
         if (element?.mimeMultipart !== undefined) { 
@@ -4495,6 +4509,13 @@ export class CamelDefinitionYamlStep {
                def.tarFile = CamelDefinitionYamlStep.readTarFileDataFormat(element.tarFile); 
             } 
         } 
+        if (element?.pqc !== undefined) { 
+            if (Array.isArray(element.pqc)) { 
+               def.pqc = CamelDefinitionYamlStep.readPQCDataFormat(element.pqc[0]); 
+            } else { 
+               def.pqc = CamelDefinitionYamlStep.readPQCDataFormat(element.pqc); 
+            } 
+        } 
         if (element?.csv !== undefined) { 
             if (Array.isArray(element.csv)) { 
                def.csv = CamelDefinitionYamlStep.readCsvDataFormat(element.csv[0]); 
@@ -4563,6 +4584,13 @@ export class CamelDefinitionYamlStep {
                def.smooks = CamelDefinitionYamlStep.readSmooksDataFormat(element.smooks[0]); 
             } else { 
                def.smooks = CamelDefinitionYamlStep.readSmooksDataFormat(element.smooks); 
+            } 
+        } 
+        if (element?.ocsf !== undefined) { 
+            if (Array.isArray(element.ocsf)) { 
+               def.ocsf = CamelDefinitionYamlStep.readOcsfDataFormat(element.ocsf[0]); 
+            } else { 
+               def.ocsf = CamelDefinitionYamlStep.readOcsfDataFormat(element.ocsf); 
             } 
         } 
         if (element?.mimeMultipart !== undefined) { 

@@ -59,6 +59,7 @@ public class KaravanConstants {
 
     public static final String PROPERTY_NAME_GAV = "camel.jbang.gav";
     public static final String PROPERTY_MAIN_NAME = "camel.main.name";
+    public static final String PROPERTY_CAMEL_RUNTIME = "camel.jbang.runtime";
 
     public static final String PROPERTY_FORMATTER_PROJECT_ID = PROPERTY_CAMEL_MAIN_NAME + "=%s";
     public static final String PROPERTY_FORMATTER_PROJECT_NAME = PROPERTY_CAMEL_MAIN_DESCRIPTION + "=%s";
@@ -76,6 +77,19 @@ public class KaravanConstants {
 
         CamelRuntime(String value) {
             this.value = value;
+        }
+
+        /** Resolve a runtime from its value ("camel-main") or enum name ("CAMEL_MAIN"),
+         *  case-insensitively. Falls back to CAMEL_MAIN for null/blank/unknown. */
+        public static CamelRuntime fromValue(String s) {
+            if (s != null && !s.isBlank()) {
+                for (CamelRuntime r : values()) {
+                    if (r.value.equalsIgnoreCase(s.trim()) || r.name().equalsIgnoreCase(s.trim())) {
+                        return r;
+                    }
+                }
+            }
+            return CAMEL_MAIN;
         }
     }
 }

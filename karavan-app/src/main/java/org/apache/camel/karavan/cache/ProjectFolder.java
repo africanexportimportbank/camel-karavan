@@ -17,6 +17,8 @@
 
 package org.apache.camel.karavan.cache;
 
+import org.apache.camel.karavan.KaravanConstants.CamelRuntime;
+
 import java.time.Instant;
 import java.util.Arrays;
 import java.util.List;
@@ -38,6 +40,19 @@ public class ProjectFolder {
     String name;
     Long lastUpdate = 0L;
     Type type;
+    // Per-project Git remote. When set, this project is committed/pushed to its
+    // own repository+branch (selected via the "Fetch branches" action in the UI)
+    // using the owning user's credentials from System -> Git. Null => the project
+    // is local-only (no Git operations). gitOwner is the username that configured
+    // the remote: only that user may configure/push/pull/build it.
+    String gitRepository;
+    String gitBranch;
+    String gitOwner;
+    // Camel runtime the project is built/run with: "camel-main" (default), "quarkus"
+    // or "spring-boot" (see KaravanConstants.CamelRuntime). Drives which application
+    // properties template is generated and which build path build.sh takes (via the
+    // CAMEL_RUNTIME env injected into the build pod/container).
+    String runtime = CamelRuntime.CAMEL_MAIN.getValue();
 
     public ProjectFolder(String projectId, String name, Long lastUpdate, Type type) {
         this.projectId = projectId;
@@ -61,7 +76,12 @@ public class ProjectFolder {
     }
 
     public ProjectFolder copy() {
-        return new ProjectFolder(projectId, name, lastUpdate, type);
+        ProjectFolder c = new ProjectFolder(projectId, name, lastUpdate, type);
+        c.gitRepository = gitRepository;
+        c.gitBranch = gitBranch;
+        c.gitOwner = gitOwner;
+        c.runtime = runtime;
+        return c;
     }
 
     public ProjectFolder() {
@@ -98,6 +118,38 @@ public class ProjectFolder {
 
     public void setType(Type type) {
         this.type = type;
+    }
+
+    public String getGitRepository() {
+        return gitRepository;
+    }
+
+    public void setGitRepository(String gitRepository) {
+        this.gitRepository = gitRepository;
+    }
+
+    public String getGitBranch() {
+        return gitBranch;
+    }
+
+    public void setGitBranch(String gitBranch) {
+        this.gitBranch = gitBranch;
+    }
+
+    public String getGitOwner() {
+        return gitOwner;
+    }
+
+    public void setGitOwner(String gitOwner) {
+        this.gitOwner = gitOwner;
+    }
+
+    public String getRuntime() {
+        return runtime != null ? runtime : CamelRuntime.CAMEL_MAIN.getValue();
+    }
+
+    public void setRuntime(String runtime) {
+        this.runtime = runtime;
     }
 
     public static List<String> getBuildInNames(){

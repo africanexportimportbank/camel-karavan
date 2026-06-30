@@ -2172,8 +2172,10 @@ export class DataFormatsDefinition extends CamelElement {
     jsonApi?: JsonApiDataFormat;
     lzf?: LZFDataFormat;
     mimeMultipart?: MimeMultipartDataFormat;
+    ocsf?: OcsfDataFormat;
     parquetAvro?: ParquetAvroDataFormat | string;
     pgp?: PGPDataFormat;
+    pqc?: PQCDataFormat;
     protobuf?: ProtobufDataFormat | string;
     rss?: RssDataFormat;
     smooks?: SmooksDataFormat;
@@ -2481,15 +2483,15 @@ export class MimeMultipartDataFormat extends CamelElement {
 }
 
 export class OcsfDataFormat extends CamelElement {
-    dataFormatName?: string = 'null';
-    allowUnmarshallType?: boolean;
-    collectionType?: string;
-    id?: string;
+    dataFormatName?: string = 'ocsf';
+    id?: string = 'ocsf' + uuidv4().substring(0,4);
     objectMapper?: string;
-    prettyPrint?: boolean;
-    unmarshalType?: string;
     useDefaultObjectMapper?: boolean;
+    unmarshalType?: string;
+    collectionType?: string;
     useList?: boolean;
+    allowUnmarshallType?: boolean;
+    prettyPrint?: boolean;
     public constructor(init?: Partial<OcsfDataFormat>) {
         super('OcsfDataFormat');
         Object.assign(this, init);
@@ -2520,15 +2522,15 @@ export class PGPDataFormat extends CamelElement {
 }
 
 export class PQCDataFormat extends CamelElement {
-    dataFormatName?: string = 'null';
-    bufferSize?: number;
-    id?: string;
+    dataFormatName?: string = 'pqc';
+    id?: string = 'pqc' + uuidv4().substring(0,4);
     keyEncapsulationAlgorithm?: string;
-    keyGenerator?: string;
-    keyPair?: string;
-    provider?: string;
     symmetricKeyAlgorithm?: string;
     symmetricKeyLength?: number;
+    keyPair?: string;
+    bufferSize?: number;
+    provider?: string;
+    keyGenerator?: string;
     public constructor(init?: Partial<PQCDataFormat>) {
         super('PQCDataFormat');
         Object.assign(this, init);
@@ -3956,8 +3958,10 @@ export class DataFormatTransformerDefinition extends CamelElement {
     jsonApi?: JsonApiDataFormat;
     lzf?: LZFDataFormat;
     mimeMultipart?: MimeMultipartDataFormat;
+    ocsf?: OcsfDataFormat;
     parquetAvro?: ParquetAvroDataFormat | string;
     pgp?: PGPDataFormat;
+    pqc?: PQCDataFormat;
     protobuf?: ProtobufDataFormat | string;
     rss?: RssDataFormat;
     smooks?: SmooksDataFormat;

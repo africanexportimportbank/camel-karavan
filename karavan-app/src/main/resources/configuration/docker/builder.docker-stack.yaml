@@ -10,10 +10,8 @@ services:
     environment:
       - PROJECT_ID=${projectId}
       - TAG=${tag}
-      - GIT_REPOSITORY=${karavan.git.repository}
-      - GIT_USERNAME=${karavan.git.username}
-      - GIT_PASSWORD=${karavan.git.password}
-      - GIT_BRANCH=${karavan.git.branch}
+      # GIT_REPOSITORY/USERNAME/PASSWORD/BRANCH are injected per build from the
+      # project's own remote + the owner's credentials (see ProjectService).
       - IMAGE_REGISTRY=${karavan.container-image.registry}
       - IMAGE_GROUP=${karavan.container-image.group}
       - IMAGE_REGISTRY_PASSWORD=${karavan.container-image.registry-password}

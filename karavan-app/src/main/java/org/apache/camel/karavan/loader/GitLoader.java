@@ -44,36 +44,26 @@ public class GitLoader {
     String environment;
 
     @Inject
-    ProjectService projectService;
-
-    @Inject
     KaravanCache karavanCache;
-
-    @Inject
-    GitService gitService;
-
-    @Inject
-    GitHistoryService  gitHistoryService;
 
     @Inject
     CodeService codeService;
 
     public void load() throws Exception {
-        boolean git = gitService.checkGit();
-        LOGGER.info("Starting Project service: git is " + (git ? "ready" : "not ready"));
-        if (gitService.checkGit()) {
-            projectService.importProjects(false);
-            if (Objects.equals(environment, DEV)) {
-                addKameletsProject();
-                addBuildInProject(ProjectFolder.Type.templates.name());
-                addBuildInProject(ProjectFolder.Type.configuration.name());
-                addBuildInProject(ProjectFolder.Type.documentation.name());
-                addBuildInProject(ProjectFolder.Type.contracts.name());
-            }
-            gitHistoryService.importCommits();
-        } else {
-            LOGGER.info("Projects are not ready");
-            throw new Exception("Projects are not ready");
+        // No global Git repository: projects are hydrated from Postgres (CacheLoader)
+        // and each is synced to its own remote on demand by its owner. Here we only
+        // seed the built-in projects (kamelets/templates/...) from bundled code.
+        LOGGER.info("Starting Project service (per-project git; no global repository)");
+        if (Objects.equals(environment, DEV)) {
+            addKameletsProject();
+            addBuildInProject(ProjectFolder.Type.templates.name());
+            addBuildInProject(ProjectFolder.Type.configuration.name());
+            // build.sh is system build-scaffolding: keep the persisted copy in sync
+            // with the bundled one so build fixes (e.g. the mandatory --runtime flag)
+            // reach installs whose build.sh was seeded by an earlier version.
+            codeService.refreshConfigurationFile(CodeService.BUILD_SCRIPT_FILENAME);
+            addBuildInProject(ProjectFolder.Type.documentation.name());
+            addBuildInProject(ProjectFolder.Type.contracts.name());
         }
     }
 

@@ -14,89 +14,35 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import React, {JSX, useEffect, useState} from 'react';
+import React, {JSX} from 'react';
 import {capitalize, Nav, NavItem, NavList,} from '@patternfly/react-core';
 import '@features/project/ProjectPage.css';
 import {
     ProjectMenu,
     ProjectMenus,
-    ProjectRuntimeMenu,
-    ProjectRuntimeMenus,
-    useAppConfigStore,
     useFilesStore,
     useFileStore,
     useProjectStore,
-    useSelectedContainerStore
 } from '@stores/ProjectStore';
 import {BUILD_IN_PROJECTS} from '@models/ProjectModels';
 import {ProjectContainersContext} from "@features/project/ProjectContainersContextProvider";
-import {SvgIcon} from "@shared/icons/SvgIcon";
-import BuildIcon from "@patternfly/react-icons/dist/esm/icons/build-icon";
-import {shallow} from "zustand/shallow";
-import {useIntegrationStore} from "@features/project/designer/DesignerStore";
-import {KubernetesIcon} from "@features/project/designer/icons/ComponentIcons";
+
+// Runtime tabs (dev "Log", "Build", "Pod") used to live here and would force-switch
+// the panel to a full-screen log when a container started — yanking the user out of
+// the route designer. Those logs and their run/build actions now live in the
+// always-available bottom console drawer (see BottomConsole), so the navbar only
+// carries the static project menu.
+const HIDDEN_FROM_NAV: ProjectMenu[] = ['build'];
 
 export function ProjectPageNavigation(): JSX.Element {
 
-    const [config] = useAppConfigStore((s) => [s.config], shallow);
-    const isKubernetes = config.infrastructure === 'kubernetes'
     const context = React.useContext(ProjectContainersContext);
     if (!context) throw new Error("ProjectContainersContext not found!");
-
-    const [selectedContainerName, setSelectedContainerName] = useSelectedContainerStore((s) => [s.selectedContainerName, s.setSelectedContainerName]);
-
-    const {devModeIsRunning, packagedIsRunning, buildIsRunning, containerStatuses, devModeContainerStatus, camelContext, containersStatusIcons} = context;
-    const hasContainers = containerStatuses?.length > 0;
-    const devContainer = containerStatuses.filter(c => c.type === 'devmode')?.at(0)
-    const hasDevmodeContainers = devContainer !== undefined;
-    const buildContainer = containerStatuses.filter(c => c.type === 'build')?.at(0)
-    const hasBuildContainers = buildContainer !== undefined;
+    const {containersStatusIcons} = context;
 
     const [files] = useFilesStore((s) => [s.files]);
     const [project, tabIndex, setTabIndex] = useProjectStore((s) => [s.project, s.tabIndex, s.setTabIndex]);
-    const [setFile, file] = useFileStore((s) => [s.setFile, s.file]);
-    const [integration] = useIntegrationStore((s) => [s.integration], shallow)
-
-    const [buildContainerId, setBuildContainerId] = useState<string>('');
-    const [hasDevMode, setHasDevMode] = useState<boolean>(false);
-
-    useEffect(() => {
-        selectName();
-    }, [tabIndex, hasDevmodeContainers, hasBuildContainers, buildContainer?.containerId, buildContainerId])
-
-    function selectName() {
-        const selectedContainers = containerStatuses.filter(c => c.containerName === selectedContainerName) || [];
-        const names = containerStatuses
-            ?.filter(cs => {
-                if (tabIndex === "build") {
-                    return cs.type === 'build'
-                } else {
-                    return ['devmode', 'packaged'].includes(cs.type)
-                }
-            })
-            ?.map(cs => cs.containerName);
-        const name = names?.at(0);
-        if (tabIndex === "build" && buildContainer?.containerId && buildContainerId !== buildContainer?.containerId) {
-            setSelectedContainerName(undefined);
-            setBuildContainerId(buildContainer?.containerId);
-        } else if (tabIndex === "build" && buildContainerId === buildContainer?.containerId && selectedContainerName === undefined) {
-            setSelectedContainerName(buildContainer.containerName);
-        } else if (!hasDevmodeContainers && hasDevMode) {
-            setHasDevMode(false);
-            setTabIndex(0);
-            setSelectedContainerName(undefined);
-        } else if (hasDevmodeContainers && !hasDevMode) {
-            setHasDevMode(true);
-            setTabIndex('log');
-            setSelectedContainerName(devModeContainerStatus?.containerName);
-        } else if (selectedContainers.length === 0 && selectedContainerName !== undefined) {
-            setSelectedContainerName(undefined);
-        } else if (selectedContainerName === undefined || !names?.includes(selectedContainerName) && name) {
-            setSelectedContainerName(name);
-        } else if (!names?.includes(selectedContainerName)) {
-            setSelectedContainerName(undefined);
-        }
-    }
+    const [setFile] = useFileStore((s) => [s.setFile]);
 
     function isBuildIn(): boolean {
         return BUILD_IN_PROJECTS.includes(project?.projectId);
@@ -121,7 +67,7 @@ export function ProjectPageNavigation(): JSX.Element {
         if (isBuildIn()) {
             menu.push('source');
         } else {
-            menu.push(...ProjectMenus);
+            menu.push(...ProjectMenus.filter(m => !HIDDEN_FROM_NAV.includes(m)));
         }
         if (!hasReadme()) {
             menu = menu.filter(m => m !== 'readme')
@@ -129,53 +75,16 @@ export function ProjectPageNavigation(): JSX.Element {
         return menu;
     }
 
-    function getProjectRuntimeMenusMenu(): ProjectRuntimeMenu[] {
-        const menus = isKubernetes ? ProjectRuntimeMenus : ProjectRuntimeMenus.filter(m => m !== 'pod');
-        let menu: (ProjectRuntimeMenu)[] = []
-        if ((devModeIsRunning || packagedIsRunning || devModeContainerStatus) && tabIndex !== "build") {
-            menu.push(...menus);
-        }
-        return menu;
-    }
-
-    function getIcon(item: ProjectRuntimeMenu | ProjectMenu) {
-        const isRunning = packagedIsRunning || devModeIsRunning;
-        if (item === 'log') {
-            const className = isRunning ? 'log-on' : 'log-off'
-            return <SvgIcon icon='log' className={className}/>
-        } else if (item === 'build' && hasBuildContainers) {
-            const className = buildIsRunning ? 'containers-run' : ''
-            return <BuildIcon className={className}/>
-        } else if (item === 'pod') {
-            return KubernetesIcon("k8s")
-        }
-    }
-
-    const projectRuntimeMenus = getProjectRuntimeMenusMenu();
     return (
         <Nav onSelect={onNavSelect} aria-label="Nav1" variant="horizontal" className="project-page-navigation">
             <NavList>
-                {getProjectMenu().map((item, i) =>
-                    <NavItem icon={getIcon(item)} key={item} preventDefault itemId={item} isActive={tabIndex === item} to="#">
+                {getProjectMenu().map((item) =>
+                    <NavItem key={item} preventDefault itemId={item} isActive={tabIndex === item} to="#">
                         {capitalize(item)}
                     </NavItem>
                 )}
             </NavList>
             {containersStatusIcons}
-            {projectRuntimeMenus.length > 0 &&
-                <NavList>
-                    {getProjectRuntimeMenusMenu().map((item, i) => {
-                            {
-                                return (
-                                    <NavItem icon={getIcon(item)} key={item} preventDefault itemId={item} isActive={tabIndex === item} to="#">
-                                        {capitalize(item)}
-                                    </NavItem>
-                                )
-                            }
-                        }
-                    )}
-                </NavList>
-            }
         </Nav>
     )
 }

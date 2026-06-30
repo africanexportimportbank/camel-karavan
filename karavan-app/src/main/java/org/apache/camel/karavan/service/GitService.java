@@ -16,9 +16,6 @@
  */
 package org.apache.camel.karavan.service;
 
-import com.jcraft.jsch.JSch;
-import com.jcraft.jsch.JSchException;
-import com.jcraft.jsch.Session;
 import io.smallrye.mutiny.tuples.Tuple2;
 import io.smallrye.mutiny.tuples.Tuple3;
 import io.vertx.core.Vertx;
@@ -26,24 +23,19 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.karavan.cache.ProjectFile;
 import org.apache.camel.karavan.cache.ProjectFolder;
+import org.apache.camel.karavan.cache.UserGitConfig;
 import org.apache.camel.karavan.model.GitConfig;
 import org.apache.camel.karavan.model.PathCommitDetails;
 import org.eclipse.jgit.api.*;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.api.errors.InvalidRemoteException;
 import org.eclipse.jgit.api.errors.RefNotFoundException;
-import org.eclipse.jgit.api.errors.TransportException;
-import org.eclipse.jgit.diff.DiffEntry;
 import org.eclipse.jgit.lib.*;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevTree;
 import org.eclipse.jgit.revwalk.RevWalk;
 import org.eclipse.jgit.transport.*;
-import org.eclipse.jgit.transport.ssh.jsch.JschConfigSessionFactory;
-import org.eclipse.jgit.transport.ssh.jsch.OpenSshConfig;
 import org.eclipse.jgit.treewalk.TreeWalk;
-import org.eclipse.jgit.treewalk.filter.TreeFilter;
-import org.eclipse.jgit.util.FS;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 
@@ -57,116 +49,90 @@ import java.nio.file.Paths;
 import java.util.*;
 import java.util.regex.Pattern;
 
+/**
+ * Per-project Git. There is no global/service-account repository: every Git
+ * operation targets the project's own remote ({@link ProjectFolder#getGitRepository()}
+ * / {@link ProjectFolder#getGitBranch()}) and authenticates with the acting
+ * user's credentials ({@link UserGitConfig}, configured in System -> Git). A
+ * project with no remote configured has no Git operations available.
+ *
+ * Files of a project live under a {@code <projectId>/} folder inside its repo
+ * (the same layout the build container expects: {@code git clone} then
+ * {@code cd <repo>/<projectId>}).
+ */
 @ApplicationScoped
 public class GitService {
 
-    @ConfigProperty(name = "karavan.git.repository")
-    String repository;
-
-    @ConfigProperty(name = "karavan.git.username")
-    Optional<String> username;
-
-    @ConfigProperty(name = "karavan.git.password")
-    Optional<String> password;
-
-    @ConfigProperty(name = "karavan.git.branch", defaultValue = "main")
-    String branch;
-
-    @ConfigProperty(name = "karavan.git.ssh.port", defaultValue = "22")
-    Optional<Integer> sshPort;
-
+    // Optional SSH key material for the build container (mounted into builds).
+    // Not used to authenticate the control-plane's own Git operations, which are
+    // HTTPS + per-user token only.
     @ConfigProperty(name = "karavan.private-key-path")
     Optional<String> privateKeyPath;
 
     @ConfigProperty(name = "karavan.known-hosts-path")
     Optional<String> knownHostsPath;
 
-    @ConfigProperty(name = "karavan.git.ephemeral", defaultValue = "false")
-    boolean ephemeral;
-
     @Inject
     Vertx vertx;
 
-    SshSessionFactory sshSessionFactory;
-
-    private Git gitForImport;
-
     private static final Logger LOGGER = Logger.getLogger(GitService.class.getName());
 
-    public Git getGitForImport() {
-        if (gitForImport == null) {
-            try {
-                gitForImport = getGit(true, vertx.fileSystem().createTempDirectoryBlocking("import"));
-            } catch (Exception e) {
-                LOGGER.error("Error", e);
-            }
-        }
-        return gitForImport;
-    }
-
-    public GitConfig getGitConfig() {
-        if (ephemeral) {
-            repository = "http://karavan.git";
-            username = Optional.of("karavan");
-            password = Optional.of("karavan");
-            privateKeyPath = Optional.empty();
-            knownHostsPath = Optional.empty();
-        }
-        return new GitConfig(repository, username.orElse(null), password.orElse(null), branch, privateKeyPath.orElse(null));
-    }
-
-    public Tuple2<String,String> getSShFiles() {
+    public Tuple2<String, String> getSShFiles() {
         return Tuple2.of(privateKeyPath.orElse(null), knownHostsPath.orElse(null));
     }
 
-    public GitConfig getGitConfigForBuilder() {
-        return new GitConfig(repository, username.orElse(null), password.orElse(null), branch, privateKeyPath.orElse(null));
+    public boolean hasRemote(ProjectFolder projectFolder) {
+        return projectFolder != null
+                && projectFolder.getGitRepository() != null
+                && !projectFolder.getGitRepository().isBlank();
     }
 
-    public Tuple3<RevCommit, List<RemoteRefUpdate.Status>, List<String>> commitAndPushProject(ProjectFolder projectFolder, List<ProjectFile> files, String message, String authorName, String authorEmail, List<String> fileNames) throws GitAPIException, IOException, URISyntaxException {
+    /**
+     * Build the Git config for an operation on a project from the project's own
+     * remote and the acting user's credentials. Requires the project to have a
+     * remote configured.
+     */
+    public GitConfig resolveGitConfig(ProjectFolder projectFolder, UserGitConfig user) {
+        if (!hasRemote(projectFolder)) {
+            throw new IllegalStateException("Project has no Git repository configured: "
+                    + (projectFolder != null ? projectFolder.getProjectId() : "null"));
+        }
+        String branch = (projectFolder.getGitBranch() != null && !projectFolder.getGitBranch().isBlank())
+                ? projectFolder.getGitBranch() : "main";
+        String u = user != null ? user.getGitUsername() : null;
+        String p = user != null ? user.getGitToken() : null;
+        return new GitConfig(projectFolder.getGitRepository().trim(), u, p, branch, null);
+    }
+
+    public Tuple3<RevCommit, List<RemoteRefUpdate.Status>, List<String>> commitAndPushProject(ProjectFolder projectFolder, List<ProjectFile> files, String message, String authorName, String authorEmail, List<String> fileNames, UserGitConfig user) throws GitAPIException, IOException, URISyntaxException {
         LOGGER.info("Commit and push project " + projectFolder.getProjectId());
-        GitConfig gitConfig = getGitConfig();
+        GitConfig gitConfig = resolveGitConfig(projectFolder, user);
         String uuid = UUID.randomUUID().toString();
         String folder = vertx.fileSystem().createTempDirectoryBlocking(uuid);
         LOGGER.info("Temp folder created " + folder);
-        Git git = getGit(true, folder);
-//        try {
-//            git = clone(folder, gitConfig.getUri(), gitConfig.getBranch());
-//            checkout(git, false, null, null, gitConfig.getBranch());
-//        } catch (RefNotFoundException | InvalidRemoteException | TransportException e) {
-//            LOGGER.error("New repository");
-//            git = init(folder, gitConfig.getUri(), gitConfig.getBranch());
-//        } catch (Exception e) {
-//            LOGGER.error("Error", e);
-//        }
+        Git git = getGit(true, folder, gitConfig);
         writeProjectToFolder(folder, projectFolder, files);
         addDeletedFilesToIndex(git, folder, projectFolder, files);
-        return commitAddedAndPush(git, gitConfig.getBranch(), message, authorName, authorEmail, fileNames, projectFolder.getProjectId());
+        return commitAddedAndPush(git, gitConfig.getBranch(), message, authorName, authorEmail, fileNames, projectFolder.getProjectId(), gitConfig);
     }
 
-    public List<PathCommitDetails> readProjectsToImport() {
-        Git importGit = getGitForImport();
-        if (importGit != null) {
-            return readProjectsFromRepository(importGit, new String[0]);
-        }
-        return new ArrayList<>(0);
-    }
-
-    public List<PathCommitDetails> readProjectFromRepository(String projectId) throws GitAPIException, IOException, URISyntaxException {
-        Git git = getGit(true, vertx.fileSystem().createTempDirectoryBlocking(UUID.randomUUID().toString()));
+    public List<PathCommitDetails> readProjectFromRepository(ProjectFolder projectFolder, UserGitConfig user) throws GitAPIException, IOException, URISyntaxException {
+        String projectId = projectFolder.getProjectId();
+        GitConfig gitConfig = resolveGitConfig(projectFolder, user);
+        Git git = getGit(true, vertx.fileSystem().createTempDirectoryBlocking(UUID.randomUUID().toString()), gitConfig);
         return readProjectsFromRepository(git, projectId).stream().filter(d -> Objects.equals(d.projectId(), projectId)).toList();
     }
 
-    public List<PathCommitDetails> readAllProjectsFromRepository() throws GitAPIException, IOException, URISyntaxException {
-        Git git = getGit(true, vertx.fileSystem().createTempDirectoryBlocking(UUID.randomUUID().toString()));
-        return readProjectsFromRepository(git);
+    /** Clone a project's own repo into {@code folder} for read-only inspection (e.g. commit history). */
+    public Git getProjectGit(ProjectFolder projectFolder, UserGitConfig user, String folder) throws GitAPIException, IOException, URISyntaxException {
+        return getGit(true, folder, resolveGitConfig(projectFolder, user));
     }
 
     public List<PathCommitDetails> getLastCommitForEachFile(Git git) throws IOException, GitAPIException {
         List<PathCommitDetails> pathCommitDetails = new ArrayList<>();
         Repository repository = git.getRepository();
 
-        // 1. Resolve the HEAD commit (the current state of the branch)
+        // Resolve the HEAD commit (the current state of the branch)
         ObjectId head = repository.resolve(Constants.HEAD);
         if (head == null) {
             throw new IllegalStateException("Repository has no HEAD. Is it an empty repository?");
@@ -176,15 +142,12 @@ public class GitService {
             RevCommit headCommit = revWalk.parseCommit(head);
             RevTree tree = headCommit.getTree();
 
-            // 2. Walk through the tree to find all files
             try (TreeWalk treeWalk = new TreeWalk(repository)) {
                 treeWalk.addTree(tree);
-                treeWalk.setRecursive(false); // 1. Turn off automatic recursion so we don't skip folder nodes
+                treeWalk.setRecursive(false); // keep folder nodes so we can record per-project folders
 
-                // Iterate through every file found in the tree
                 while (treeWalk.next()) {
                     String path = treeWalk.getPathString();
-                    // 2. Determine if the current item is a directory (Tree) or file (Blob)
                     boolean isFolder = treeWalk.isSubtree();
                     Iterable<RevCommit> commits = git.log().addPath(path).setMaxCount(1).call();
 
@@ -201,7 +164,7 @@ public class GitService {
                         String content = new String(loader.getBytes(), StandardCharsets.UTF_8);
 
                         for (RevCommit commit : commits) {
-                            String commitId = commit.getName(); // The SHA-1 hash
+                            String commitId = commit.getName();
                             Long commitTime = Integer.valueOf(commit.getCommitTime()).longValue() * 1000;
                             String[] parts = path.split(Pattern.quote(File.separator));
                             if (parts.length == 2) {
@@ -226,75 +189,70 @@ public class GitService {
         } catch (RefNotFoundException e) {
             LOGGER.error("New repository");
             return result;
+        } catch (IllegalStateException e) {
+            // Empty repo (no HEAD yet) — nothing to import.
+            LOGGER.info(e.getMessage());
+            return result;
         } catch (Exception e) {
             LOGGER.error("Error", e);
             return result;
         }
     }
 
-    public Git getGit(boolean checkout, String folder) throws GitAPIException, IOException, URISyntaxException {
-        GitConfig gitConfig = getGitConfig();
+    /**
+     * Clone the project's remote into {@code folder}. If the remote exists but the
+     * target branch is missing (a brand-new/empty repo), initialize it locally so a
+     * first push can create the branch. Authentication/connectivity failures
+     * (TransportException) propagate so the caller can surface a proper error.
+     */
+    public Git getGit(boolean checkout, String folder, GitConfig gitConfig) throws GitAPIException, IOException, URISyntaxException {
         LOGGER.info("Git checkout " + gitConfig.getUri());
-        LOGGER.info("Temp folder created " + folder);
-        Git git = null;
-        if (ephemeral) {
-            LOGGER.warn("New ephemeral repository");
-            git = init(folder, gitConfig.getUri(), gitConfig.getBranch());
-        } else {
-            try {
-                git = clone(folder, gitConfig.getUri(), gitConfig.getBranch());
-                var branch = git.branchList().call().stream().filter(ref -> ref.getName().equals("refs/heads/" + gitConfig.getBranch())).findFirst();
-                if (branch.isEmpty()) {
-                    createBranch(git, gitConfig.getBranch());
-                }
-                if (checkout) {
-                    checkout(git, false, null, null, gitConfig.getBranch());
-                }
-            } catch (RefNotFoundException | InvalidRemoteException | TransportException e) {
-                LOGGER.error("New repository", e);
-                git = init(folder, gitConfig.getUri(), gitConfig.getBranch());
-            } catch (Exception e) {
-                LOGGER.error("Error", e);
+        Git git;
+        try {
+            // A branch newly created in Karavan (e.g. to test a different runtime) does
+            // not exist on the remote yet. Cloning with --branch <new> fails hard with
+            // "Remote branch '<new>' not found in upstream origin" (a TransportException,
+            // NOT the RefNotFoundException caught below), which broke commit/push/build.
+            // So when the target branch is missing remotely, clone the remote's default
+            // branch and create the new branch locally; the first commit+push then
+            // creates it on the remote.
+            boolean branchExists = remoteBranchExists(gitConfig);
+            git = clone(folder, gitConfig, branchExists);
+            if (!branchExists) {
+                createLocalBranch(git, gitConfig.getBranch());
+            } else if (checkout) {
+                checkout(git, false, null, null, gitConfig.getBranch());
             }
+        } catch (RefNotFoundException | InvalidRemoteException e) {
+            // Reachable remote with no refs at all yet (brand-new/empty repo) -> init locally.
+            LOGGER.warn("New/empty repository, initializing locally: " + e.getMessage());
+            git = init(folder, gitConfig.getUri(), gitConfig.getBranch());
         }
         return git;
     }
 
-    private List<String> readProjectsFromFolder(String folder, String... filter) {
-        LOGGER.info("Importing folder " + folder);
-        List<String> files = new ArrayList<>();
-        vertx.fileSystem().readDirBlocking(folder).forEach(path -> {
-            String[] filenames = path.split(Pattern.quote(File.separator));
-            String folderName = filenames[filenames.length - 1];
-            if (folderName.startsWith(".")) {
-                // skip hidden
-            } else if (Files.isDirectory(Paths.get(path))) {
-                if (filter == null || filter.length == 0 || Arrays.asList(filter).contains(folderName)) {
-                    LOGGER.info("Reading project from sub-folder " + folderName);
-                    files.add(folderName);
-                }
-            }
-        });
-        return files;
+    /** Whether {@code gitConfig.getBranch()} already exists on the remote (git ls-remote). */
+    private boolean remoteBranchExists(GitConfig gitConfig) {
+        try {
+            return listRemoteBranches(gitConfig.getUri(), gitConfig.getUsername(), gitConfig.getPassword())
+                    .stream().anyMatch(b -> Objects.equals(b, gitConfig.getBranch()));
+        } catch (Exception e) {
+            // Couldn't list (brand-new/empty repo or a transient error): assume the branch
+            // is absent so we attempt to create it. A real auth/connectivity failure
+            // resurfaces on the clone with a clearer message.
+            LOGGER.warn("Could not list remote branches for " + gitConfig.getUri() + ": " + e.getMessage());
+            return false;
+        }
     }
 
-    private Map<String, String> readProjectFilesFromFolder(String repoFolder, String projectFolder) {
-        LOGGER.infof("Reading files from %s/%s", repoFolder, projectFolder);
-        Map<String, String> files = new HashMap<>();
-        vertx.fileSystem().readDirBlocking(repoFolder + File.separator + projectFolder).forEach(f -> {
-            String[] filenames = f.split(Pattern.quote(File.separator));
-            String filename = filenames[filenames.length - 1];
-            Path path = Paths.get(f);
-            if (!filename.startsWith(".") && !Files.isDirectory(path)) {
-                LOGGER.info("Reading " + filename);
-                try {
-                    files.put(filename, Files.readString(path));
-                } catch (IOException e) {
-                    LOGGER.error("Error during file read", e);
-                }
-            }
-        });
-        return files;
+    /**
+     * Create the (remotely-missing) branch locally off the cloned default branch and
+     * switch to it, so the project's files are committed onto the new branch and the
+     * subsequent push creates it on the remote.
+     */
+    private void createLocalBranch(Git git, String branch) throws GitAPIException {
+        LOGGER.info("Remote branch '" + branch + "' is missing; creating it locally");
+        git.checkout().setCreateBranch(true).setName(branch).call();
     }
 
     private void writeProjectToFolder(String folder, ProjectFolder projectFolder, List<ProjectFile> files) throws IOException {
@@ -328,7 +286,7 @@ public class GitService {
         });
     }
 
-    public Tuple3<RevCommit, List<RemoteRefUpdate.Status>, List<String>> commitAddedAndPush(Git git, String branch, String message, String authorName, String authorEmail, List<String> fileNames, String projectId) throws GitAPIException {
+    public Tuple3<RevCommit, List<RemoteRefUpdate.Status>, List<String>> commitAddedAndPush(Git git, String branch, String message, String authorName, String authorEmail, List<String> fileNames, String projectId, GitConfig gitConfig) throws GitAPIException {
         LOGGER.info("Commit and push changes to the branch " + branch);
         AddCommand add = git.add();
         for (String fileName : fileNames) {
@@ -339,23 +297,21 @@ public class GitService {
         List<String> messages = new ArrayList<>();
         List<RemoteRefUpdate.Status> statuses = new ArrayList<>();
         LOGGER.info("Git commit: " + commit);
-        if (!ephemeral) {
-            PushCommand pushCommand = git.push();
-            pushCommand.add(branch).setRemote("origin");
-            setCredentials(pushCommand);
-            Iterable<PushResult> results = pushCommand.call();
-            for (PushResult pr : results) {
-                if (pr != null) {
-                    LOGGER.info("Git push result: " + pr.getMessages());
-                    for (RemoteRefUpdate rru : pr.getRemoteUpdates()) {
-                        LOGGER.info("Git push: " + rru.getStatus() + ", " + rru.getMessage());
-                        if (RemoteRefUpdate.Status.OK != rru.getStatus()) {
-                            statuses.add(rru.getStatus());
-                            messages.add(rru.getMessage());
-                        }
+        PushCommand pushCommand = git.push();
+        pushCommand.add(branch).setRemote("origin");
+        setCredentials(pushCommand, gitConfig);
+        Iterable<PushResult> results = pushCommand.call();
+        for (PushResult pr : results) {
+            if (pr != null) {
+                LOGGER.info("Git push result: " + pr.getMessages());
+                for (RemoteRefUpdate rru : pr.getRemoteUpdates()) {
+                    LOGGER.info("Git push: " + rru.getStatus() + ", " + rru.getMessage());
+                    if (RemoteRefUpdate.Status.OK != rru.getStatus()) {
+                        statuses.add(rru.getStatus());
+                        messages.add(rru.getMessage());
                     }
-                    messages.add(pr.getMessages());
                 }
+                messages.add(pr.getMessages());
             }
         }
         return Tuple3.of(commit, statuses, messages);
@@ -363,7 +319,6 @@ public class GitService {
 
     public Git init(String dir, String uri, String branch) throws GitAPIException, IOException, URISyntaxException {
         Git git = Git.init().setInitialBranch(branch).setDirectory(Path.of(dir).toFile()).call();
-//        git.branchCreate().setName(branch).call();
         addRemote(git, uri);
         return git;
     }
@@ -377,19 +332,20 @@ public class GitService {
         }
     }
 
-    public void deleteProject(String projectId, String authorName, String authorEmail) {
+    public void deleteProject(ProjectFolder projectFolder, String authorName, String authorEmail, UserGitConfig user) {
+        String projectId = projectFolder.getProjectId();
         LOGGER.info("Delete and push project " + projectId);
-        GitConfig gitConfig = getGitConfig();
+        GitConfig gitConfig = resolveGitConfig(projectFolder, user);
         String uuid = UUID.randomUUID().toString();
         String folder = vertx.fileSystem().createTempDirectoryBlocking(uuid);
         String commitMessage = "Project " + projectId + " is deleted";
         LOGGER.infof("Temp folder %s is created for deletion of project %s", folder, projectId);
         try {
-            Git git = getGit(true, folder);
+            Git git = getGit(true, folder, gitConfig);
             addDeletedFolderToIndex(git, projectId);
-            commitAddedAndPush(git, gitConfig.getBranch(), commitMessage, authorName, authorEmail, List.of("."), projectId);
+            commitAddedAndPush(git, gitConfig.getBranch(), commitMessage, authorName, authorEmail, List.of("."), projectId, gitConfig);
             LOGGER.info("Delete Temp folder " + folder);
-            vertx.fileSystem().deleteRecursiveBlocking(folder, true);
+            vertx.fileSystem().deleteRecursiveBlocking(folder);
             LOGGER.infof("Project %s deleted from Git", projectId);
         } catch (RefNotFoundException e) {
             LOGGER.error("Repository not found");
@@ -399,47 +355,30 @@ public class GitService {
         }
     }
 
-    private Git clone(String dir, String uri, String branch) throws GitAPIException, URISyntaxException {
+    private Git clone(String dir, GitConfig gitConfig, boolean useBranch) throws GitAPIException, URISyntaxException {
         CloneCommand command = Git.cloneRepository();
         command.setCloneAllBranches(false);
         command.setDirectory(Paths.get(dir).toFile());
-        command.setURI(uri);
-        command.setBranch(branch);
-        setCredentials(command);
+        command.setURI(gitConfig.getUri());
+        // Only pin the branch when it exists on the remote. For a not-yet-pushed branch
+        // we clone the remote's default branch (the caller creates the branch locally).
+        if (useBranch) {
+            command.setBranch(gitConfig.getBranch());
+        }
+        setCredentials(command, gitConfig);
         Git git = command.call();
-        addRemote(git, uri);
+        addRemote(git, gitConfig.getUri());
         return git;
     }
 
     private void addRemote(Git git, String uri) throws URISyntaxException, GitAPIException {
-        // add remote repo:
         RemoteAddCommand remoteAddCommand = git.remoteAdd();
         remoteAddCommand.setName("origin");
         remoteAddCommand.setUri(new URIish(uri));
         remoteAddCommand.call();
     }
 
-    private void fetch(Git git) throws GitAPIException {
-        // fetch:
-        FetchCommand command = git.fetch();
-        setCredentials(command);
-        FetchResult result = command.call();
-    }
-
-    private void pull(Git git) throws GitAPIException {
-        // pull:
-        PullCommand command = git.pull();
-        setCredentials(command);
-        PullResult result = command.call();
-    }
-
-    private void createBranch(Git git, String branch) throws GitAPIException {
-        git.commit().setMessage("Initial commit").call();
-        git.branchCreate().setName(branch).call();
-    }
-
     private void checkout(Git git, boolean create, String path, String startPoint, String branch) throws GitAPIException {
-        // create branch:
         CheckoutCommand checkoutCommand = git.checkout();
         checkoutCommand.setName(branch);
         checkoutCommand.setCreateBranch(create);
@@ -452,95 +391,43 @@ public class GitService {
         checkoutCommand.call();
     }
 
-    private Tuple2<String, Integer> lastCommit(Git git, String path) throws GitAPIException {
-        Iterable<RevCommit> log = git.log().addPath(path).setMaxCount(1).call();
-        for (RevCommit commit : log) {
-            return Tuple2.of(commit.getId().getName(), commit.getCommitTime());
+    /**
+     * List the branches of a remote repository without cloning it (git ls-remote
+     * --heads). Used by the "Fetch branches" action when configuring a project's
+     * Git remote. Credentials are the calling user's stored Git username/token; a
+     * null/blank pair attempts an anonymous (public-repo) listing.
+     */
+    public List<String> listRemoteBranches(String repoUrl, String gitUsername, String gitToken) throws GitAPIException {
+        LsRemoteCommand command = Git.lsRemoteRepository()
+                .setRemote(repoUrl)
+                .setHeads(true)
+                .setTags(false);
+        // A token alone is enough (GitHub/GitLab PATs): use the username if set,
+        // otherwise the token doubles as the username.
+        if (gitToken != null && !gitToken.isBlank()) {
+            String user = (gitUsername != null && !gitUsername.isBlank()) ? gitUsername : gitToken;
+            command.setCredentialsProvider(new UsernamePasswordCredentialsProvider(user, gitToken));
         }
-        return null;
-    }
-
-    public Set<String> getChangedProjects(RevCommit commit) {
-        Set<String> files = new HashSet<>();
-        Git git = getGitForImport();
-        if (git != null) {
-            TreeWalk walk = new TreeWalk(git.getRepository());
-            walk.setRecursive(true);
-            walk.setFilter(TreeFilter.ANY_DIFF);
-
-            ObjectId a = commit.getTree().getId();
-            RevCommit parent = commit.getParent(0);
-            ObjectId b = parent.getTree().getId();
-            try {
-                walk.reset(b, a);
-                List<DiffEntry> changes = DiffEntry.scan(walk);
-                changes.stream().forEach(de -> {
-                    String path = de.getNewPath();
-                    if (path != null) {
-                        String[] parts = path.split(Pattern.quote(File.separator));
-                        if (parts.length > 0) {
-                            files.add(parts[0]);
-                        }
-                    }
-                });
-            } catch (IOException e) {
-                LOGGER.error("Error", e);
+        List<String> branches = new ArrayList<>();
+        for (Ref ref : command.call()) {
+            String name = ref.getName();
+            if (name.startsWith(Constants.R_HEADS)) {
+                branches.add(name.substring(Constants.R_HEADS.length()));
             }
         }
-        return files;
+        branches.sort(String.CASE_INSENSITIVE_ORDER);
+        return branches;
     }
 
-    public boolean checkGit() throws Exception {
-        LOGGER.info("Check git");
-        if (ephemeral) {
-            return true;
-        }
-        GitConfig gitConfig = getGitConfig();
-        String uuid = UUID.randomUUID().toString();
-        String folder = vertx.fileSystem().createTempDirectoryBlocking(uuid);
-        try (Git git = clone(folder, gitConfig.getUri(), gitConfig.getBranch())) {
-            LOGGER.info("Git is ready");
-        } catch (Exception e) {
-            LOGGER.info("Error connecting git: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
-        }
-        return true;
-    }
-
-    private <T extends TransportCommand> T setCredentials(T command) {
-        if (privateKeyPath.isPresent() && (repository.startsWith("git") || repository.startsWith("ssh://"))) {
-            LOGGER.info("Set SshTransport");
-            command.setTransportConfigCallback(transport -> {
-                SshTransport sshTransport = (SshTransport) transport;
-                sshTransport.setSshSessionFactory(getSshSessionFactory());
-            });
-        } else if (username.isPresent() && password.isPresent()) {
-            LOGGER.info("Set UsernamePasswordCredentialsProvider");
-            command.setCredentialsProvider(new UsernamePasswordCredentialsProvider(username.get(), password.get()));
+    private <T extends TransportCommand> T setCredentials(T command, GitConfig gitConfig) {
+        // A token (password) alone is enough (GitHub/GitLab PATs): use the username
+        // if provided, otherwise the token doubles as the username.
+        String token = gitConfig.getPassword();
+        if (token != null && !token.isBlank()) {
+            String user = (gitConfig.getUsername() != null && !gitConfig.getUsername().isBlank())
+                    ? gitConfig.getUsername() : token;
+            command.setCredentialsProvider(new UsernamePasswordCredentialsProvider(user, token));
         }
         return command;
-    }
-
-    private SshSessionFactory getSshSessionFactory() {
-        if (sshSessionFactory == null) {
-            sshSessionFactory = new JschConfigSessionFactory() {
-                protected void configureJSch(JSch jsch) {
-                    try {
-                        jsch.addIdentity(privateKeyPath.get());
-                        jsch.setKnownHosts(knownHostsPath.get());
-                    } catch (JSchException e) {
-                        LOGGER.info("Error configureJSch: " + (e.getCause() != null ? e.getCause().getMessage() : e.getMessage()));
-                    }
-                }
-
-                @Override
-                protected Session createSession(OpenSshConfig.Host hc, String user, String host, int port, FS fs) throws JSchException {
-                    if (sshPort.isPresent()) {
-                        port = sshPort.get();
-                    }
-                    return super.createSession(hc, user, host, port, fs);
-                }
-            };
-        }
-        return sshSessionFactory;
     }
 }

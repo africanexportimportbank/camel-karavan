@@ -4,7 +4,6 @@ import './PageNavigation.css';
 import {useAppConfigStore, useDevModeStore, useFileStore} from "@stores/ProjectStore";
 import {shallow} from "zustand/shallow";
 import {useLocation, useNavigate} from "react-router-dom";
-import {SsoApi} from "@api/auth/SsoApi";
 import {UserPopupOidc} from "../login/UserPopupOidc";
 import {BUILD_IN_PROJECTS} from "@models/ProjectModels";
 import DarkModeToggle from "@app/theme/DarkModeToggle";
@@ -24,7 +23,7 @@ function PageNavigation() {
     const [pageId, setPageId] = useState<string>();
     const navigate = useNavigate();
     const location = useLocation();
-    const {reload} = useContext(AuthContext);
+    const {logout} = useContext(AuthContext);
     const firstMenu = getNavigationFirstMenu(config.environment, config.infrastructure);
     const secondMenu = getNavigationSecondMenu(config.environment, config.infrastructure);
 
@@ -48,13 +47,8 @@ function PageNavigation() {
 
     function onClick(page: MenuItem) {
         if (page.pageId === 'logout') {
-            if (AuthApi.authType === 'oidc') {
-                SsoApi.logout(() => {
-                });
-            } else if (AuthApi.authType === 'session') {
-                AuthApi.logout().then(() => reload());
-                // reload();
-            }
+            // The per-mode logout (OIDC /logout vs session) lives in AuthProvider.
+            logout();
         } else {
             setFile('none', undefined);
             setPodName(undefined);

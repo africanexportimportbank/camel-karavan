@@ -1,5 +1,15 @@
+# jkube merges this into the generated Deployment (camel-main / spring-boot). The
+# org.apache.camel.karavan/type=packaged label marks the deployed pod as the project's
+# "packaged" runtime container so PodEventHandler types it correctly and the UI lists it
+# as the running app (projectId is resolved by jkube's app label -> deployment name).
+metadata:
+  labels:
+    org.apache.camel.karavan/type: packaged
 spec:
   replicas: 1
   template:
+    metadata:
+      labels:
+        org.apache.camel.karavan/type: packaged
     spec:
       serviceAccount: karavan

@@ -61,7 +61,7 @@ public class DockerComposeConverter {
     }
 
     public static String toCode(DockerCompose compose) {
-        Yaml yaml = new Yaml(new ComposeRepresenter());
+        Yaml yaml = new Yaml(new ComposeRepresenter(), new DumperOptions());
         return yaml.dumpAs(compose, Tag.MAP, DumperOptions.FlowStyle.BLOCK);
     }
 

@@ -19,6 +19,7 @@ package org.apache.camel.karavan.listener;
 
 import io.quarkus.vertx.ConsumeEvent;
 import io.vertx.core.json.JsonObject;
+import io.vertx.mutiny.core.eventbus.EventBus;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.karavan.cache.KaravanCache;
@@ -28,6 +29,7 @@ import org.jboss.logging.Logger;
 import java.time.Instant;
 import java.util.Objects;
 
+import static org.apache.camel.karavan.KaravanEvents.NOTIFICATION_STATUS_UPDATED;
 import static org.apache.camel.karavan.KaravanEvents.POD_CONTAINER_DELETED;
 import static org.apache.camel.karavan.KaravanEvents.POD_CONTAINER_UPDATED;
 
@@ -38,11 +40,15 @@ public class PodContainerStatusListener {
     @Inject
     KaravanCache karavanCache;
 
+    @Inject
+    EventBus eventBus;
+
     @ConsumeEvent(value = POD_CONTAINER_DELETED, blocking = true, ordered = true)
     public void cleanContainersStatus(JsonObject data) {
         PodContainerStatus containerStatus = data.mapTo(PodContainerStatus.class);
         karavanCache.deletePodContainerStatus(containerStatus);
         karavanCache.deleteCamelStatuses(containerStatus.getProjectId(), containerStatus.getEnv());
+        notifyStatusUpdated(containerStatus.getProjectId(), containerStatus.getEnv());
     }
 
     @ConsumeEvent(value = POD_CONTAINER_UPDATED, blocking = true, ordered = true)
@@ -52,6 +58,7 @@ public class PodContainerStatusListener {
             PodContainerStatus oldStatus = karavanCache.getPodContainerStatus(newStatus.getProjectId(), newStatus.getEnv(), newStatus.getContainerName());
             if (oldStatus == null) {
                 karavanCache.savePodContainerStatus(newStatus);
+                notifyStatusUpdated(newStatus.getProjectId(), newStatus.getEnv());
             } else if (Objects.equals(oldStatus.getInTransit(), Boolean.FALSE)) {
                 savePodContainerStatus(newStatus, oldStatus);
             } else if (Objects.equals(oldStatus.getInTransit(), Boolean.TRUE)) {
@@ -78,6 +85,20 @@ public class PodContainerStatusListener {
             newStatus.setCpuInfo(oldStatus.getCpuInfo());
             newStatus.setMemoryInfo(oldStatus.getMemoryInfo());
         }
+        // Only push to the UI on a real lifecycle change (created/started/exited/dead),
+        // NOT on every CPU/memory stat tick — otherwise the SSE would just mirror the
+        // stats poll and the SPA would refresh-storm.
+        boolean stateChanged = !Objects.equals(oldStatus.getState(), newStatus.getState());
         karavanCache.savePodContainerStatus(newStatus);
+        if (stateChanged) {
+            notifyStatusUpdated(newStatus.getProjectId(), newStatus.getEnv());
+        }
+    }
+
+    private void notifyStatusUpdated(String projectId, String env) {
+        eventBus.publish(NOTIFICATION_STATUS_UPDATED, new JsonObject()
+                .put("type", "container")
+                .put("projectId", projectId)
+                .put("env", env));
     }
 }

@@ -1,0 +1,25 @@
+# TEMPLATE for the Auth0 OIDC overlay. Copy to values-auth0.yaml (gitignored)
+# and replace the placeholders with your IdP tenant values.
+#
+# Client credentials are NOT stored here — they go in the karavan-oidc Secret
+# (created by `make oidc-secret` from OIDC_CLIENT_ID / OIDC_CLIENT_SECRET in .env).
+#
+# Deploy: make deploy-oidc REGISTRY=<your-registry>   (local)
+#     or: make deploy-eks                              (AWS, uses values-eks.yaml too)
+
+auth:
+  type: "oidc"
+  oidc:
+    # Read client-id / client-secret from this pre-created Secret.
+    existingSecret: "karavan-oidc"
+    # Backend (quarkus-oidc) — validates the IdP tokens.
+    authServerUrl: "https://<your-oidc-issuer>"
+    audience: "https://<your-api-audience>/"
+    applicationType: "web-app"
+    rolesClaim: "https://<your-oidc-issuer>/roles"
+
+# Point this at the custom image you built & pushed (see deploy/README.md).
+# image:
+#   repository: <your-registry>/camel-karavan
+#   tag: "auth0"
+#   pullPolicy: Always

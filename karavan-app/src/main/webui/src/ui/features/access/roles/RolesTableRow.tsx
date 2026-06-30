@@ -4,7 +4,7 @@ import {Tbody, Td, Tr} from "@patternfly/react-table";
 import {AccessRole, PLATFORM_ADMIN, PLATFORM_DEVELOPER, PLATFORM_USER} from "@models/AccessModels";
 import {useAccessStore} from "@stores/AccessStore";
 import {shallow} from "zustand/shallow";
-import DeleteIcon from "@patternfly/react-icons/dist/js/icons/times-icon";
+import DeleteIcon from "@patternfly/react-icons/dist/esm/icons/times-icon";
 import {ShieldAltIcon, UsersIcon} from "@patternfly/react-icons";
 import {ModalConfirmation} from "@shared/ui/ModalConfirmation";
 import {AccessApi} from "@api/AccessApi";

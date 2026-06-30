@@ -31,6 +31,8 @@ public class Configuration {
     private List<String> configFilenames;
     private List<Object> status;
     private Map<String, String> advanced;
+    // Default Camel runtime offered when creating a project (camel-main/quarkus/spring-boot).
+    private String defaultRuntime;
 
     public Configuration() {
     }
@@ -134,5 +136,13 @@ public class Configuration {
 
     public void setPlatformConfigName(String platformConfigName) {
         this.platformConfigName = platformConfigName;
+    }
+
+    public String getDefaultRuntime() {
+        return defaultRuntime;
+    }
+
+    public void setDefaultRuntime(String defaultRuntime) {
+        this.defaultRuntime = defaultRuntime;
     }
 }

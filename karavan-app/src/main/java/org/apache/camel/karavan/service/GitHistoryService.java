@@ -5,8 +5,9 @@ import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
 import org.apache.camel.karavan.cache.KaravanCache;
 import org.apache.camel.karavan.cache.ProjectFileCommitDiff;
+import org.apache.camel.karavan.cache.ProjectFolder;
 import org.apache.camel.karavan.cache.ProjectFolderCommit;
-import org.apache.camel.karavan.cache.SystemCommit;
+import org.apache.camel.karavan.cache.UserGitConfig;
 import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.diff.DiffEntry;
 import org.eclipse.jgit.diff.DiffFormatter;
@@ -48,114 +49,20 @@ public class GitHistoryService {
     @Inject
     KaravanCache karavanCache;
 
-    public void importProjectCommits(String projectId) {
+    public void importProjectCommits(ProjectFolder projectFolder, UserGitConfig user) {
+        String projectId = projectFolder.getProjectId();
         LOGGER.info("Import commits for " + projectId);
         managedExecutor.runAsync(() -> {
-            var commits = getProjectCommits(projectId, 10);
+            var commits = getProjectCommits(projectFolder, user, 10);
             karavanCache.saveProjectLastCommits(projectId, commits);
         });
     }
 
-    public void importCommits() {
-        LOGGER.info("Import commits for system");
-        managedExecutor.runAsync(() -> {
-            var commits = getCommits( 100);
-            karavanCache.saveSystemCommits(commits);
-        });
-    }
-
-    public List<SystemCommit> getCommits(int maxCount) {
-        List<SystemCommit> result = new ArrayList<>();
-        try {
-            Git pollGit = gitService.getGit(true, vertx.fileSystem().createTempDirectoryBlocking("commits"));
-            if (pollGit == null) return result;
-
-            // Grab the repository reference to pass to our helper
-            Repository repository = pollGit.getRepository();
-
-            Iterable<RevCommit> commits = pollGit.log()
-                    .setMaxCount(maxCount)
-                    .all()
-                    .call();
-
-            StreamSupport.stream(commits.spliterator(), false)
-                    .sorted(Comparator.comparingInt(RevCommit::getCommitTime).reversed())
-                    .forEach(commit -> {
-                        try {
-                            // Get the folders modified in this specific commit
-                            List<String> modifiedFolders = getChangedFoldersInCommit(repository, commit);
-
-                            SystemCommit systemCommit = new SystemCommit(
-                                    commit.getId().getName(),
-                                    commit.getAuthorIdent().getName(),
-                                    commit.getAuthorIdent().getEmailAddress(),
-                                    commit.getCommitTime() * 1000L,
-                                    commit.getShortMessage(),
-                                    modifiedFolders // <-- Injected here
-                            );
-                            result.add(systemCommit);
-                        } catch (Exception e) {
-                            LOGGER.error("Error building diffs for commit " + commit.getId().getName(), e);
-                        }
-                    });
-
-        } catch (Exception e) {
-            LOGGER.error("Error", e);
-        }
-
-        return result;
-    }
-
-    private List<String> getChangedFoldersInCommit(Repository repository, RevCommit commit) throws IOException {
-        Set<String> changedFolders = new HashSet<>();
-
-        // DisabledOutputStream ensures we don't print the actual file diffs to the console
-        try (DiffFormatter diffFormatter = new DiffFormatter(DisabledOutputStream.INSTANCE);
-             RevWalk revWalk = new RevWalk(repository)) {
-
-            diffFormatter.setRepository(repository);
-            diffFormatter.setDetectRenames(true);
-
-            AbstractTreeIterator parentTreeParser;
-
-            if (commit.getParentCount() > 0) {
-                // For standard/merge commits, compare against the first parent
-                RevCommit parent = revWalk.parseCommit(commit.getParent(0).getId());
-                parentTreeParser = new CanonicalTreeParser(null, repository.newObjectReader(), parent.getTree().getId());
-            } else {
-                // For the initial root commit, compare against an empty tree
-                parentTreeParser = new EmptyTreeIterator();
-            }
-
-            AbstractTreeIterator commitTreeParser = new CanonicalTreeParser(null, repository.newObjectReader(), commit.getTree().getId());
-
-            // Calculate the differences
-            List<DiffEntry> diffs = diffFormatter.scan(parentTreeParser, commitTreeParser);
-
-            for (DiffEntry diff : diffs) {
-                // If the file was deleted, getNewPath() returns /dev/null, so we must use getOldPath()
-                String path = (diff.getChangeType() == DiffEntry.ChangeType.DELETE)
-                        ? diff.getOldPath()
-                        : diff.getNewPath();
-
-                // Extract the folder path from the file path
-                int lastSlash = path.lastIndexOf('/');
-
-                // If lastSlash is -1, the file is in the root directory.
-                // You can change "/" to "" depending on your preference.
-                String folder = (lastSlash == -1) ? "/" : path.substring(0, lastSlash);
-
-                changedFolders.add(folder); // Set automatically deduplicates
-            }
-        }
-
-        return new ArrayList<>(changedFolders);
-    }
-
-    public List<ProjectFolderCommit> getProjectCommits(String projectId, int maxCount) {
+    public List<ProjectFolderCommit> getProjectCommits(ProjectFolder projectFolder, UserGitConfig user, int maxCount) {
+        String projectId = projectFolder.getProjectId();
         List<ProjectFolderCommit> result = new ArrayList<>();
         try {
-            Git pollGit = gitService.getGit(true, vertx.fileSystem().createTempDirectoryBlocking("commits"));
+            Git pollGit = gitService.getProjectGit(projectFolder, user, vertx.fileSystem().createTempDirectoryBlocking("commits"));
             if (pollGit == null) return result;
 
             Repository repo = pollGit.getRepository();

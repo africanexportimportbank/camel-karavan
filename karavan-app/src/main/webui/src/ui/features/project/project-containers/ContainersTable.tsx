@@ -35,16 +35,17 @@ export function ContainersTable() {
                     <Thead>
                         <Tr>
                             <Th>Name</Th>
-                            <Th>Type</Th>
+                            <Th>Status</Th>
                             <Th>Created</Th>
                             <Th>Image</Th>
                             <Th>CPU</Th>
                             <Th>Memory</Th>
+                            <Th screenReaderText="Actions"/>
                         </Tr>
                     </Thead>
                     <Tbody className='event-table'>
                         {containerStatuses.map((containerStatus, index) => (
-                            <ContainersTableRow containerStatus={containerStatus} index={index}/>
+                            <ContainersTableRow key={containerStatus.containerName} containerStatus={containerStatus} index={index}/>
                         ))}
                     </Tbody>
                 </Table>

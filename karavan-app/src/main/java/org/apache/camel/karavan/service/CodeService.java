@@ -180,13 +180,61 @@ public class CodeService {
     }
 
     public ProjectFile generateApplicationProperties(ProjectFolder projectFolder) {
-        String template = getTemplateText(APPLICATION_PROPERTIES_FILENAME);
+        // Pick the application.properties template for the project's runtime. The output
+        // file is always named application.properties; only the source template differs
+        // (camel-main / quarkus / spring-boot). Falls back to the camel-main template if a
+        // runtime-specific variant isn't bundled.
+        String templateName = applicationPropertiesTemplate(projectFolder.getRuntime());
+        String template = getTemplateText(templateName);
+        if (template == null) {
+            template = getTemplateText(APPLICATION_PROPERTIES_FILENAME);
+        }
         String code = substituteVariables(template, Map.of(
                 "projectId", projectFolder.getProjectId(),
                 "projectName", projectFolder.getName(),
                 "packageSuffix", CodeService.getGavPackageSuffix(projectFolder.getProjectId())
         ));
         return new ProjectFile(APPLICATION_PROPERTIES_FILENAME, code, projectFolder.getProjectId(), Instant.now().getEpochSecond() * 1000L);
+    }
+
+    private static String applicationPropertiesTemplate(String runtime) {
+        CamelRuntime r = CamelRuntime.fromValue(runtime);
+        return switch (r) {
+            case QUARKUS -> "application-quarkus.properties";
+            case SPRING_BOOT -> "application-springboot.properties";
+            default -> APPLICATION_PROPERTIES_FILENAME;
+        };
+    }
+
+    /**
+     * The runtime a project is built/run with. Source of truth is the project's own
+     * application.properties (camel.jbang.runtime) so imported projects are honoured too;
+     * falls back to camel-main. Returned as the runtime value ("camel-main"/"quarkus"/
+     * "spring-boot") and injected into the build as CAMEL_RUNTIME.
+     */
+    public String getProjectRuntime(String projectId) {
+        ProjectFile appProps = karavanCache.getProjectFile(projectId, APPLICATION_PROPERTIES_FILENAME);
+        if (appProps != null && appProps.getCode() != null) {
+            String value = getPropertyValue(appProps.getCode(), PROPERTY_CAMEL_RUNTIME);
+            if (value != null && !value.isBlank()) {
+                return CamelRuntime.fromValue(value).getValue();
+            }
+        }
+        return CamelRuntime.CAMEL_MAIN.getValue();
+    }
+
+    /** A starter Camel route so a new project has runnable structure to edit ("Add Sample"). */
+    public ProjectFile createSampleIntegration(ProjectFolder projectFolder) {
+        String code = "- route:\n" +
+                "    id: sample\n" +
+                "    from:\n" +
+                "      uri: timer:sample\n" +
+                "      parameters:\n" +
+                "        period: \"5000\"\n" +
+                "      steps:\n" +
+                "        - log:\n" +
+                "            message: \"Hello from " + projectFolder.getName() + "\"\n";
+        return new ProjectFile("sample" + CAMEL_YAML_EXTENSION, code, projectFolder.getProjectId(), Instant.now().getEpochSecond() * 1000L);
     }
 
     public String saveProjectFilesInTemp(Map<String, String> files) {
@@ -207,6 +255,31 @@ public class CodeService {
     public String getBuilderScript() {
         String envTemplate = getConfigurationText(environment + "." + BUILD_SCRIPT_FILENAME);
         return envTemplate != null ? envTemplate : getConfigurationText(BUILD_SCRIPT_FILENAME);
+    }
+
+    /**
+     * Re-seed a single bundled "configuration" build-scaffolding file (e.g. build.sh)
+     * from the classpath over the persisted copy when it has drifted. addBuildInProject
+     * only adds missing files, so without this an app-level build fix (such as the now
+     * mandatory --runtime export flag) would never reach an existing install.
+     */
+    public void refreshConfigurationFile(String fileName) {
+        try {
+            String bundled = getBuildInProjectFiles(ProjectFolder.Type.configuration.name()).get(fileName);
+            if (bundled == null) {
+                return;
+            }
+            ProjectFile stored = karavanCache.getProjectFile(ProjectFolder.Type.configuration.name(), fileName);
+            String storedCode = stored != null ? stored.getCode().replaceAll("\r\n", "\n") : null;
+            if (!bundled.replaceAll("\r\n", "\n").equals(storedCode)) {
+                ProjectFile file = new ProjectFile(fileName, bundled, ProjectFolder.Type.configuration.name(),
+                        Instant.now().getEpochSecond() * 1000L);
+                karavanCache.saveProjectFile(file, null, false);
+                LOGGER.info("Refreshed bundled configuration file: " + fileName);
+            }
+        } catch (Exception e) {
+            LOGGER.error("Error refreshing configuration file " + fileName, e);
+        }
     }
 
     public String getConfigurationText(String fileName) {

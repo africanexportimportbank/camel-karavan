@@ -125,19 +125,6 @@ export class ProjectService {
         });
     }
 
-    public static pullAllProjects() {
-        useProjectStore.setState({isPulling: true})
-        KaravanApi.pull(undefined, res => {
-            if (res.status === 200 || res.status === 201) {
-                useProjectStore.setState({isPulling: false})
-                ProjectService.refreshProjects();
-            } else {
-                EventBus.sendAlert("Error pulling", (res as any)?.response?.data, 'danger')
-            }
-            useProjectStore.setState({isPulling: false})
-        });
-    }
-
     static afterKameletsLoad(yamls: string, saveCamelKamelets: (kameletYamls: string[], clean?: boolean) => void): void {
         try {
             const kamelets: string[] = [];
@@ -292,11 +279,15 @@ export class ProjectService {
 
     public static deleteProject(project: Project, deleteContainers?: boolean) {
         KaravanApi.deleteProject(project, deleteContainers === true, res => {
-            if (res.status === 204) {
+            if (res.status >= 200 && res.status < 300) {
                 EventBus.sendAlert('Success', 'Project deleted', 'success');
                 ProjectService.refreshProjects();
             } else {
-                EventBus.sendAlert('Warning', 'Error when deleting project:' + res.statusText, 'warning');
+                // res may be an AxiosError (typed as AxiosResponse here) — surface the
+                // backend message from .response.data / .message, falling back to status.
+                const err = res as any;
+                const reason = err?.response?.data || err?.message || res?.statusText || 'unknown error';
+                EventBus.sendAlert('Warning', 'Error when deleting project: ' + reason, 'warning');
             }
         });
     }

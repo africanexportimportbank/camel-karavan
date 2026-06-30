@@ -1956,11 +1956,17 @@ export class CamelDefinitionApi {
         if (element?.mimeMultipart !== undefined) { 
             def.mimeMultipart = CamelDefinitionApi.createMimeMultipartDataFormat(element.mimeMultipart); 
         }
+        if (element?.ocsf !== undefined) { 
+            def.ocsf = CamelDefinitionApi.createOcsfDataFormat(element.ocsf); 
+        }
         if (element?.parquetAvro !== undefined) { 
             def.parquetAvro = CamelDefinitionApi.createParquetAvroDataFormat(element.parquetAvro); 
         }
         if (element?.pgp !== undefined) { 
             def.pgp = CamelDefinitionApi.createPGPDataFormat(element.pgp); 
+        }
+        if (element?.pqc !== undefined) { 
+            def.pqc = CamelDefinitionApi.createPQCDataFormat(element.pqc); 
         }
         if (element?.protobuf !== undefined) { 
             def.protobuf = CamelDefinitionApi.createProtobufDataFormat(element.protobuf); 
@@ -2966,11 +2972,17 @@ export class CamelDefinitionApi {
         if (element?.mimeMultipart !== undefined) { 
             def.mimeMultipart = CamelDefinitionApi.createMimeMultipartDataFormat(element.mimeMultipart); 
         }
+        if (element?.ocsf !== undefined) { 
+            def.ocsf = CamelDefinitionApi.createOcsfDataFormat(element.ocsf); 
+        }
         if (element?.parquetAvro !== undefined) { 
             def.parquetAvro = CamelDefinitionApi.createParquetAvroDataFormat(element.parquetAvro); 
         }
         if (element?.pgp !== undefined) { 
             def.pgp = CamelDefinitionApi.createPGPDataFormat(element.pgp); 
+        }
+        if (element?.pqc !== undefined) { 
+            def.pqc = CamelDefinitionApi.createPQCDataFormat(element.pqc); 
         }
         if (element?.protobuf !== undefined) { 
             def.protobuf = CamelDefinitionApi.createProtobufDataFormat(element.protobuf); 

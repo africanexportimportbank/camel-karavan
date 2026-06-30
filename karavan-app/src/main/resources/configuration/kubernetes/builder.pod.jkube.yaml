@@ -25,23 +25,6 @@ spec:
             secretKeyRef:
               name: karavan
               key: karavan.container-image.group
-        - name: GIT_REPOSITORY
-          valueFrom:
-            secretKeyRef:
-              name: karavan
-              key: karavan.git.repository
-        - name: GIT_USERNAME
-          valueFrom:
-            secretKeyRef:
-              name: karavan
-              key: karavan.git.username
-        - name: GIT_PASSWORD
-          valueFrom:
-            secretKeyRef:
-              name: karavan
-              key: karavan.git.password
-        - name: GIT_BRANCH
-          valueFrom:
-            secretKeyRef:
-              name: karavan
-              key: karavan.git.branch
+        # GIT_REPOSITORY/USERNAME/PASSWORD/BRANCH are injected per build from the
+        # project's own remote + the owner's credentials (see ProjectService /
+        # KubernetesService.getBuilderPod envVars), not from a shared secret.

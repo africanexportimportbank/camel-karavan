@@ -27,7 +27,7 @@ import {CreateFileModal} from "@features/project/files/CreateFileModal";
 import {CreateProjectModal} from "@features/project/files/CreateProjectModal";
 import {FileCopyForEnvModal} from "./FileCopyForEnvModal";
 import {CopyIcon} from "@patternfly/react-icons/dist/esm/icons/copy-icon";
-import {DockerIcon} from "@patternfly/react-icons/dist/js/icons/docker-icon";
+import {DockerIcon} from "@patternfly/react-icons/dist/esm/icons/docker-icon";
 import {KubernetesIcon} from "@features/project/designer/icons/ComponentIcons";
 import {JKubeIcon} from "@features/project/designer/icons/KaravanIcons";
 import {camelIcon, CamelUi} from "@features/project/designer/utils/CamelUi";

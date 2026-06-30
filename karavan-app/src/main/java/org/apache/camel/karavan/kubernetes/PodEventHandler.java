@@ -111,16 +111,36 @@ public class PodEventHandler implements ResourceEventHandler<Pod> {
         String camel = pod.getMetadata().getLabels().get(LABEL_KUBERNETES_RUNTIME);
         String runtime = pod.getMetadata().getLabels().get(LABEL_CAMEL_RUNTIME);
         String type = pod.getMetadata().getLabels().get(LABEL_TYPE);
-        String commit = pod.getMetadata().getAnnotations().get(ANNOTATION_COMMIT);
+        String commit = pod.getMetadata().getAnnotations() != null ? pod.getMetadata().getAnnotations().get(ANNOTATION_COMMIT) : null;
         if (appName != null) {
+            // Resolve project/type/runtime from the owning Deployment (jkube sets app=projectId).
+            // Null-guard everything: a missing Deployment (informer race) or null labels/annotations
+            // must not NPE here — the exception is swallowed below and would silently HIDE the pod
+            // from the Containers table. Fall back to the pod's own labels when unavailable.
             Deployment deployment = kubernetesStatusService.getDeployment(appName);
-             projectId = deployment.getMetadata().getName();
-             camel = deployment.getMetadata().getLabels().get(LABEL_KUBERNETES_RUNTIME);
-             runtime = deployment.getMetadata().getLabels().get(LABEL_CAMEL_RUNTIME);
-             type = deployment.getMetadata().getLabels().get(LABEL_TYPE);
-             commit = deployment.getMetadata().getAnnotations().get(ANNOTATION_COMMIT);
+            if (deployment != null && deployment.getMetadata() != null) {
+                projectId = deployment.getMetadata().getName();
+                Map<String, String> dLabels = deployment.getMetadata().getLabels();
+                if (dLabels != null) {
+                    camel = dLabels.get(LABEL_KUBERNETES_RUNTIME);
+                    runtime = dLabels.get(LABEL_CAMEL_RUNTIME);
+                    type = dLabels.get(LABEL_TYPE);
+                }
+                if (deployment.getMetadata().getAnnotations() != null) {
+                    commit = deployment.getMetadata().getAnnotations().get(ANNOTATION_COMMIT);
+                }
+            }
         }
-        ContainerType containerType = type != null ? ContainerType.valueOf(type) : ContainerType.unknown;
+        // Safe parse: an unrecognised type label must degrade to unknown, not throw (a throw is
+        // swallowed by the catch below and would hide the pod entirely).
+        ContainerType containerType = ContainerType.unknown;
+        if (type != null) {
+            try {
+                containerType = ContainerType.valueOf(type);
+            } catch (IllegalArgumentException ignored) {
+                // leave as unknown
+            }
+        }
         try {
             boolean ready = pod.getStatus().getConditions().stream().anyMatch(c -> c.getType().equals("Ready") && c.getStatus().equals("True"));
             boolean running = Objects.equals(pod.getStatus().getPhase(), "Running");

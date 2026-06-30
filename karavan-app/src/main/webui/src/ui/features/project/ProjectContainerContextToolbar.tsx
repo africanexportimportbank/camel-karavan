@@ -9,11 +9,12 @@ import {ContainerStatus} from "@models/ProjectModels";
 interface Props {
     additionalTools?: ReactElement;
     hideContainersToggle?: boolean;
+    hideTitle?: boolean;
 }
 
 export function ProjectContainerContextToolbar(props: Props): ReactElement {
 
-    const {additionalTools, hideContainersToggle} = props;
+    const {additionalTools, hideContainersToggle, hideTitle} = props;
     const context = React.useContext(ProjectContainersContext);
     // if (!context) throw new Error("ProjectContainersContext not found!");
     // const {containerStatuses} = context ? context : undefined;
@@ -43,9 +44,11 @@ export function ProjectContainerContextToolbar(props: Props): ReactElement {
 
     return (
         <div className="topology-toolbar">
-            <div className="group-switch">
-                <ProjectTitle/>
-            </div>
+            {!hideTitle &&
+                <div className="group-switch">
+                    <ProjectTitle/>
+                </div>
+            }
             {additionalTools}
             {context && !hideContainersToggle && <div>
                 <ToggleGroup aria-label="Default with single selectable">

@@ -15,10 +15,9 @@
  * limitations under the License.
  */
 
-import {SsoApi} from "@api/auth/SsoApi";
 import {fetchEventSource} from "@microsoft/fetch-event-source";
 import {ProjectEventBus} from "@bus/ProjectEventBus";
-import {AuthApi, getCurrentUser} from "@api/auth/AuthApi";
+import {getCurrentUser} from "@api/auth/AuthApi";
 
 export class LogWatchApi {
 
@@ -29,9 +28,7 @@ export class LogWatchApi {
                 Accept: "text/event-stream",
             };
             const url = `/ui/logwatch/${type}/${podName}/${getCurrentUser()?.username ?? ""}`;
-            if (AuthApi.authType === 'oidc' && SsoApi.keycloak?.token && SsoApi.keycloak?.token?.length > 0) {
-                headers.Authorization = "Bearer " + SsoApi.keycloak?.token;
-            }
+            // BFF: authenticated by the session cookie (credentials:"include").
             await fetchEventSource(url, {
                 method: "GET", headers: headers, signal: controller.signal, credentials: "include",
                 async onopen(response) {

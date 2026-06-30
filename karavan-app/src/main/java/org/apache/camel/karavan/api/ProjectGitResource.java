@@ -25,10 +25,15 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
+import org.apache.camel.karavan.cache.ProjectFolder;
+import org.apache.camel.karavan.cache.UserGitConfig;
+import org.apache.camel.karavan.service.GitService;
 import org.apache.camel.karavan.service.ProjectService;
 import org.jboss.logging.Logger;
 
 import java.util.HashMap;
+import java.util.List;
+import java.util.Objects;
 
 import static org.apache.camel.karavan.KaravanEvents.CMD_PUSH_PROJECT;
 
@@ -41,13 +46,57 @@ public class ProjectGitResource extends AbstractApiResource {
     ProjectService projectService;
 
     @Inject
+    GitService gitService;
+
+    @Inject
     EventBus eventBus;
+
+    @POST
+    @Authenticated
+    @Path("/branches")
+    @Produces(MediaType.APPLICATION_JSON)
+    @Consumes(MediaType.APPLICATION_JSON)
+    public Response branches(JsonObject body) {
+        String repository = body != null ? body.getString("repository") : null;
+        if (repository == null || repository.isBlank()) {
+            return Response.status(Response.Status.BAD_REQUEST).entity("Repository URL is required.").build();
+        }
+        String username = getIdentity().getString("username");
+        UserGitConfig config = karavanCache.getUserGitConfig(username);
+        String gitToken = config != null ? config.getGitToken() : null;
+        boolean hasCreds = gitToken != null && !gitToken.isBlank();
+        try {
+            List<String> branches = gitService.listRemoteBranches(repository.trim(),
+                    config != null ? config.getGitUsername() : null, gitToken);
+            return Response.ok(JsonObject.of("branches", branches)).build();
+        } catch (Exception e) {
+            String raw = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
+            LOGGER.errorf("Error listing remote branches for %s (user=%s, hasCreds=%s): %s",
+                    repository, username, hasCreds, raw);
+            String msg;
+            if (!hasCreds) {
+                msg = "No Git credentials found for your account. Add your Git username + token in "
+                        + "System → Git, then Fetch again (required for private repositories).";
+            } else if (raw != null && (raw.contains("Authentication") || raw.contains("not authorized")
+                    || raw.contains("401") || raw.contains("403"))) {
+                msg = "Git authentication failed. Check your token in System → Git and that you have "
+                        + "access to " + repository + ".";
+            } else if (raw != null && (raw.contains("not found") || raw.contains("Repository not found")
+                    || raw.contains("ENOENT") || raw.contains("unknown host") || raw.contains("UnknownHost"))) {
+                msg = "Repository not reachable: " + repository + ". Check the URL.";
+            } else {
+                msg = "Could not read branches from " + repository + ": " + raw;
+            }
+            return Response.status(Response.Status.BAD_REQUEST).entity(msg).build();
+        }
+    }
 
     @POST
     @Authenticated
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     public HashMap<String, String> push(HashMap<String, String> params, @Context SecurityContext securityContext) throws Exception {
+        requireGitOwner(params.get("projectId"));
         var identity = getIdentity();
         var data = JsonObject.mapFrom(params);
         data.put("authorName", identity.getString("username"));
@@ -57,33 +106,36 @@ public class ProjectGitResource extends AbstractApiResource {
     }
 
     @PUT
-    @Authenticated
-    @Produces(MediaType.APPLICATION_JSON)
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Path("/")
-    public Response pullAll() {
-        try {
-            projectService.importProjects(true);
-            return Response.ok().build();
-        } catch (Exception e) {
-            LOGGER.error(e.getMessage());
-            return Response.serverError().entity(e.getMessage()).build();
-        }
-    }
-
-    @PUT
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
     @Path("/{projectId}")
     @Authenticated
     public Response pull(@PathParam("projectId") String projectId) {
         try {
-            projectService.importProject(projectId);
+            requireGitOwner(projectId);
+            projectService.importProject(projectId, getIdentity().getString("username"));
             return Response.ok().build();
+        } catch (WebApplicationException e) {
+            throw e;
         } catch (Exception e) {
             LOGGER.error(e.getMessage());
             return Response.serverError().entity(e.getMessage()).build();
         }
+    }
 
+    /**
+     * A project's Git remote is restricted to the user who configured it. Throws
+     * 400 if the project has no remote, 403 if the caller is not the owner.
+     */
+    private ProjectFolder requireGitOwner(String projectId) {
+        ProjectFolder p = projectId != null ? karavanCache.getProject(projectId) : null;
+        if (p == null || !gitService.hasRemote(p)) {
+            throw new WebApplicationException("Project has no Git repository configured", Response.Status.BAD_REQUEST);
+        }
+        String username = getIdentity().getString("username");
+        if (p.getGitOwner() != null && !Objects.equals(p.getGitOwner(), username)) {
+            throw new WebApplicationException("Git remote is restricted to " + p.getGitOwner(), Response.Status.FORBIDDEN);
+        }
+        return p;
     }
 }

@@ -60,6 +60,7 @@ public class KaravanCache {
     final Map<String, AccessPassword> passwords = new ConcurrentHashMap<>();
     final Map<String, AccessRole> roles = new ConcurrentHashMap<>();
     final Map<String, AccessSession> sessions = new ConcurrentHashMap<>();
+    final Map<String, UserGitConfig> gitConfigs = new ConcurrentHashMap<>();
 
     final Map<String, Map<String, Instant>> projectActivities = new ConcurrentHashMap<>();
     final Map<String, ActivityUser> usersWorking = new ConcurrentHashMap<>();
@@ -426,6 +427,22 @@ public class KaravanCache {
         if (!AuthService.getAllRoles().contains(role.name)) {
             roles.remove(key, role);
             eventBus.send(PERSIST_ACCESS, new CacheEvent(key, DELETE, null));
+        }
+    }
+
+    // --- Per-user Git credentials ---
+
+    public UserGitConfig getUserGitConfig(String username) {
+        var key = GroupedKey.create(UserGitConfig.class.getSimpleName(), DEV, username);
+        var cfg = gitConfigs.get(key);
+        return cfg != null ? cfg.copy() : null;
+    }
+
+    public void saveUserGitConfig(UserGitConfig config, boolean persist) {
+        var key = GroupedKey.create(UserGitConfig.class.getSimpleName(), DEV, config.getUsername());
+        gitConfigs.put(key, config);
+        if (persist) {
+            eventBus.send(PERSIST_ACCESS, new CacheEvent(key, SAVE, config));
         }
     }
 

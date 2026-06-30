@@ -5,16 +5,19 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import org.apache.camel.karavan.cache.KaravanCache;
+import org.apache.camel.karavan.cache.ProjectFolder;
 import org.apache.camel.karavan.cache.ProjectFolderCommit;
 import org.apache.camel.karavan.cache.SystemCommit;
+import org.apache.camel.karavan.cache.UserGitConfig;
 import org.apache.camel.karavan.service.GitHistoryService;
+import org.apache.camel.karavan.service.GitService;
 import org.jboss.logging.Logger;
 
 import java.util.List;
+import java.util.Objects;
 
 @Path("/ui/git")
-public class GitCommitResource {
+public class GitCommitResource extends AbstractApiResource {
 
     private static final Logger LOGGER = Logger.getLogger(GitCommitResource.class.getName());
 
@@ -22,7 +25,7 @@ public class GitCommitResource {
     GitHistoryService gitHistoryService;
 
     @Inject
-    KaravanCache karavanCache;
+    GitService gitService;
 
     @GET
     @Authenticated
@@ -43,7 +46,15 @@ public class GitCommitResource {
     @Path("/commits/{projectId}")
     public Response loadProjectCommits(@PathParam("projectId") String projectId) {
         try {
-            gitHistoryService.importProjectCommits(projectId);
+            ProjectFolder p = karavanCache.getProject(projectId);
+            if (p == null || !gitService.hasRemote(p)) {
+                return Response.status(Response.Status.BAD_REQUEST).entity("Project has no Git repository configured").build();
+            }
+            String username = getIdentity().getString("username");
+            if (p.getGitOwner() != null && !Objects.equals(p.getGitOwner(), username)) {
+                return Response.status(Response.Status.FORBIDDEN).entity("Git remote is restricted to " + p.getGitOwner()).build();
+            }
+            gitHistoryService.importProjectCommits(p, karavanCache.getUserGitConfig(username));
             return Response.accepted().build();
         }  catch (Exception e) {
             return Response.serverError().entity(e.getMessage()).build();

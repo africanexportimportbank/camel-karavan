@@ -25,6 +25,10 @@ public class KaravanEvents {
     public static final String NOTIFICATION_OTHER = "NOTIFICATION_OTHER";
     public static final String COMMIT_HAPPENED = "COMMIT_HAPPENED";
     public static final String NOTIFICATION_IMAGES_LOADED = "NOTIFICATION_IMAGES_LOADED";
+    // Pushed to the SPA (via NotificationListener -> SSE) when a container/pod or
+    // deployment status changes in the cache, so the UI refreshes immediately instead
+    // of waiting for its next poll tick.
+    public static final String NOTIFICATION_STATUS_UPDATED = "NOTIFICATION_STATUS_UPDATED";
 
     public static final String CMD_SHARE_CONFIGURATION = "CMD_SHARE_CONFIGURATION";
     public static final String NOTIFICATION_CONFIG_SHARED = "NOTIFICATION_CONFIG_SHARED";

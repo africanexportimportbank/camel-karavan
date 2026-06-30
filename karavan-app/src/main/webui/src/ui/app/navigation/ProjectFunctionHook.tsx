@@ -275,7 +275,10 @@ export function ProjectFunctionHook() {
     function refreshData() {
         fetchCamelStatuses(project.projectId, config.environment);
         fetchContainers();
-        if (tabIndex === "build") {
+        // Deployment + image status drive the Containers tab (deploy/undeploy/rollout
+        // live there now that the standalone "build" navbar tab is gone). Poll on
+        // 'containers' so the UI updates after a deploy without a page reload.
+        if (tabIndex === "build" || tabIndex === "containers") {
             ProjectService.refreshAllDeploymentStatuses();
             ProjectService.refreshImages(project.projectId);
         } if (tabIndex === 'architecture') {

@@ -1,5 +1,5 @@
 import React, {useEffect, useState} from 'react';
-import {Bullseye, EmptyState, EmptyStateVariant, ProgressStep, ProgressStepper} from '@patternfly/react-core';
+import {Bullseye, EmptyState, EmptyStateVariant} from '@patternfly/react-core';
 import {InnerScrollContainer, OuterScrollContainer, Table, Tbody, Td, Th, Thead, Tr} from '@patternfly/react-table';
 import {SearchIcon} from '@patternfly/react-icons';
 import {shallow} from "zustand/shallow";
@@ -84,15 +84,14 @@ export function ProjectsTab() {
                                     <Th key='status' screenReaderText='pass' modifier='fitContent'/>
                                     <Th key='projectId'>Name</Th>
                                     <Th key='name'>Description</Th>
-                                    <Th key='timeline' modifier={"fitContent"}>
-                                        <ProgressStepper isCenterAligned className={"projects-table-header-progress-stepper"}>
-                                            <ProgressStep id="commited" titleId="commited">
-                                                <div style={{textWrap: 'nowrap'}}>Commited</div>
-                                            </ProgressStep>
-                                            <ProgressStep id="saved" titleId="saved">
-                                                <div style={{textWrap: 'nowrap'}}>Saved</div>
-                                            </ProgressStep>
-                                        </ProgressStepper>
+                                    <Th key='timeline' modifier={"fitContent"} textCenter>
+                                        {/* Two labels aligned over the body's timeline stepper (same min-width)
+                                            instead of a ProgressStepper-as-header, whose hidden connector let
+                                            "Commited"/"Saved" crowd and collide with the Complexity column. */}
+                                        <div className="projects-table-timeline-header">
+                                            <span>Commited</span>
+                                            <span>Saved</span>
+                                        </div>
                                     </Th>
                                     <Th key='complexity' modifier={"fitContent"} textCenter>Complexity</Th>
                                     <Th key='acivity' modifier={"fitContent"} textCenter>Active Users</Th>

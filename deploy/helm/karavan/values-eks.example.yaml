@@ -1,0 +1,61 @@
+# TEMPLATE for the EKS deploy overlay. Copy to values-eks.yaml (gitignored) and
+# replace the placeholders with your account id / region / hostnames.
+#   <ACCOUNT_ID>   AWS account id
+#   <REGION>       AWS region (e.g. eu-west-1)
+#   <APP_HOST>     public hostname for the app   (e.g. karavan.example.com)
+#   <REGISTRY_HOST> public hostname for the in-cluster registry (e.g. registry.example.com)
+#
+# Deploy: make deploy-eks   (or: helm upgrade --install karavan deploy/helm/karavan
+#   -n karavan --create-namespace -f values-auth0.yaml -f values-eks.yaml)
+
+# App + dev-mode images come from ECR (the EKS node role has ECR read access).
+image:
+  repository: <ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/apache/camel-karavan
+  tag: "dev"
+  # "dev" is a mutable tag — Always so a redeploy pulls the freshly-pushed image.
+  pullPolicy: Always
+
+devmodeImage: "<ACCOUNT_ID>.dkr.ecr.<REGION>.amazonaws.com/apache/camel-karavan-devmode:dev"
+
+# PROJECT images use a provider-agnostic in-cluster Distribution registry exposed
+# over HTTPS through an ALB with a node-trusted (ACM) cert. No ECR token/repo
+# steps. Wire the ALB route once: deploy/eks/wire-registry-alb.sh
+registry:
+  server: "<REGISTRY_HOST>"
+  group: "karavan"
+  username: ""        # in-cluster registry is unauthenticated (internal ALB only)
+  password: ""
+  createSecret: true
+  inCluster:
+    enabled: true
+    image: "registry:2.8.3"
+    serviceName: "registry"
+    port: 5000
+    storage: "10Gi"
+
+# Dedicated internal ALB owned by THIS cluster's AWS Load Balancer Controller, so
+# its listener rules are never pruned by another cluster sharing an ALB. The LB
+# controller must be installed in the cluster. After first deploy, repoint your DNS
+# to the new ALB (kubectl get ingress -n karavan -> ADDRESS).
+ingress:
+  enabled: true
+  className: alb
+  groupName: karavan-internal      # unique to this cluster
+  subnets: "<INTERNAL_SUBNET_A>,<INTERNAL_SUBNET_B>"  # internal-elb subnets in your VPC
+  certificateArn: "arn:aws:acm:<REGION>:<ACCOUNT_ID>:certificate/<CERT_ID>"  # *.your-domain cert
+  host: "<APP_HOST>"
+  registry:
+    enabled: true
+    host: "<REGISTRY_HOST>"
+
+# Behind the ALB (TLS terminated at the ALB) -> trust X-Forwarded-* for OIDC.
+behindTlsProxy: true
+
+# The Service is a plain ClusterIP; the ALB targets pod IPs (target-type: ip).
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# OIDC stays as in values-auth0.yaml; the redirect_uri becomes
+# https://<APP_HOST>/auth/callback (must be in Auth0 Allowed Callback URLs).

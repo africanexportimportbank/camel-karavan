@@ -57,7 +57,7 @@ public class CamelStatusScheduler {
              karavanCache.getPodContainerStatuses(environment).stream()
                      .filter(cs -> Objects.equals(cs.getLabels().get(LABEL_KUBERNETES_RUNTIME), CAMEL_PREFIX))
                      .filter(cs -> Objects.equals(cs.getType(), ContainerType.devmode) || Objects.equals(cs.getType(), ContainerType.packaged))
-                     .filter(cs -> Objects.equals(cs.getCamelRuntime(), KaravanConstants.CamelRuntime.CAMEL_MAIN.getValue()))
+                     .filter(cs -> isSupportedCamelRuntime(cs.getCamelRuntime()))
                      .forEach(cs -> {
                          CamelStatusRequest csr = new CamelStatusRequest(cs.getProjectId(), cs.getContainerName());
                          eventBus.publish(CMD_COLLECT_CAMEL_STATUS,
@@ -67,7 +67,7 @@ public class CamelStatusScheduler {
          } else {
              karavanCache.getPodContainerStatuses(environment).stream()
                      .filter(Objects::nonNull)
-                     .filter(cs -> Objects.equals(cs.getCamelRuntime(), KaravanConstants.CamelRuntime.CAMEL_MAIN.getValue()))
+                     .filter(cs -> isSupportedCamelRuntime(cs.getCamelRuntime()))
                      .filter(cs -> Objects.equals(cs.getType(), ContainerType.devmode) || Objects.equals(cs.getType(), ContainerType.packaged))
                      .forEach(cs -> {
                          CamelStatusRequest csr = new CamelStatusRequest(cs.getProjectId(), cs.getContainerName());
@@ -76,5 +76,13 @@ public class CamelStatusScheduler {
                          );
                      });
          }
+    }
+
+    // Camel status is collected for every supported runtime, not just camel-main, so
+    // quarkus/spring-boot integrations also report route/context metrics to the UI.
+    private static boolean isSupportedCamelRuntime(String runtime) {
+        return Objects.equals(runtime, KaravanConstants.CamelRuntime.CAMEL_MAIN.getValue())
+                || Objects.equals(runtime, KaravanConstants.CamelRuntime.QUARKUS.getValue())
+                || Objects.equals(runtime, KaravanConstants.CamelRuntime.SPRING_BOOT.getValue());
     }
 }

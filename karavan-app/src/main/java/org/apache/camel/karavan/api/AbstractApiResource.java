@@ -43,8 +43,14 @@ public class AbstractApiResource {
 
         var roles = new JsonArray(new java.util.ArrayList<>(identity.getRoles()));
 
+        // In OIDC mode the principal is not in the local cache; the principal name
+        // is the email (quarkus.oidc.token.principal-claim=email), so fall back to
+        // it. This keeps "email" non-null for the git author identity (PersonIdent),
+        // which otherwise throws "E-mail address of PersonIdent must not be null".
+        String email = (user != null && user.getEmail() != null) ? user.getEmail() : username;
+
         return JsonObject.of()
-                .put("email", user != null ? user.getEmail() : null)
+                .put("email", email)
                 .put("username", username)
                 .put("roles", roles);
     }

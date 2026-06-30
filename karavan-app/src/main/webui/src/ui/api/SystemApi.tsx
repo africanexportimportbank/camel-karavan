@@ -191,4 +191,27 @@ export class SystemApi {
             ErrorEventBus.sendApiError(err);
         });
     }
+
+    // Per-user Git credentials (token is write-only; read returns {gitUsername, hasToken})
+    static async getGitConfig(after: (config: {gitUsername?: string, hasToken: boolean}) => void) {
+        instance.get('/platform/system/git', {headers: {'Accept': 'application/json'}})
+            .then(res => {
+                if (res.status === 200) {
+                    after(res.data);
+                }
+            }).catch(err => {
+            ErrorEventBus.sendApiError(err);
+        });
+    }
+
+    static async saveGitConfig(gitUsername: string, gitToken: string, after: (config: {gitUsername?: string, hasToken: boolean}) => void) {
+        instance.post('/platform/system/git', {gitUsername: gitUsername, gitToken: gitToken})
+            .then(res => {
+                if (res.status === 200) {
+                    after(res.data);
+                }
+            }).catch(err => {
+            ErrorEventBus.sendApiError(err);
+        });
+    }
 }

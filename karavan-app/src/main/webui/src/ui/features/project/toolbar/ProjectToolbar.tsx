@@ -1,12 +1,9 @@
-import React, {useEffect} from 'react';
-import {DevModeToolbar} from "./DevModeToolbar";
+import React from 'react';
 import {SettingsToolbar} from "@features/projects/SettingsToolbar";
 import {useAppConfigStore, useFileStore, useProjectStore} from "@stores/ProjectStore";
 import {shallow} from "zustand/shallow";
 import {EditorToolbar} from "@features/project/developer/EditorToolbar";
 import {BUILD_IN_PROJECTS} from "@models/ProjectModels";
-import {ProjectContainersContextProvider} from "../ProjectContainersContextProvider";
-import {BuildToolbar} from "@features/project/toolbar/BuildToolbar";
 
 export function ProjectToolbar() {
 
@@ -15,12 +12,10 @@ export function ProjectToolbar() {
     const [config] = useAppConfigStore((s) => [s.config], shallow);
     const isDev = config.environment === 'dev';
     const isBuildInProject = BUILD_IN_PROJECTS.includes(project?.projectId);
-    const showDevModeToolbar = isDev && !isBuildInProject && tabIndex !== "build";
-    const showPackageToolbar = isDev && !isBuildInProject && tabIndex === "build";
+    // Dev-mode + build actions moved to the bottom console drawer (BottomConsole).
+    // The top toolbar now only carries project settings (and the editor toolbar
+    // when a file is open).
     const showResourceToolbar = (isBuildInProject || !isDev) && tabIndex !== "build";
-
-    useEffect(() => {
-    }, [project, file]);
 
     function isFile(): boolean {
         return file !== undefined && operation !== 'delete';
@@ -29,16 +24,6 @@ export function ProjectToolbar() {
     function getProjectToolbar() {
         return (
             <div id="toolbar-group-types" className='main-toolbar-toolbar'>
-                {showDevModeToolbar &&
-                    <ProjectContainersContextProvider>
-                        <DevModeToolbar/>
-                    </ProjectContainersContextProvider>
-                }
-                {showPackageToolbar &&
-                    <ProjectContainersContextProvider>
-                        <BuildToolbar/>
-                    </ProjectContainersContextProvider>
-                }
                 {showResourceToolbar && <SettingsToolbar/>}
             </div>
         )

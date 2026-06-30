@@ -58,6 +58,7 @@ export class AppConfig {
     advanced: any = {}
     platformSecretName: string = '';
     platformConfigName: string = '';
+    defaultRuntime?: string;
 }
 
 export enum ProjectType {
@@ -68,6 +69,12 @@ export enum ProjectType {
     services = 'services',
     contracts = 'contracts',
     integration = 'integration',
+}
+
+export enum ProjectRuntime {
+    CAMEL_MAIN = 'camel-main',
+    QUARKUS = 'quarkus',
+    SPRING_BOOT = 'spring-boot',
 }
 
 export const BUILD_IN_PROJECTS: string[] = [
@@ -92,6 +99,12 @@ export class Project {
     name: string = '';
     lastUpdate: number = 0;
     type: string = ProjectType.integration;
+    runtime: string = ProjectRuntime.CAMEL_MAIN;
+    // Optional per-project Git remote (set via the Create Project "Fetch branches" flow).
+    gitRepository?: string;
+    gitBranch?: string;
+    // Username that configured the remote; only the owner may configure/push/pull it.
+    gitOwner?: string;
 
     public constructor(projectId: string, name: string, lastCommit: string, type: string);
     public constructor(init?: Partial<Project>);

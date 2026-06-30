@@ -4,7 +4,7 @@ import {mainHook} from "@app/MainHook";
 import {Notification} from "@features/project/designer/utils/Notification";
 import {NotificationApi} from "@api/NotificationApi";
 import {AuthContext} from "@api/auth/AuthProvider";
-import {AuthApi, getCurrentUser} from "@api/auth/AuthApi";
+import {AuthApi, getCurrentUser, isUnauthorized} from "@api/auth/AuthApi";
 import {PLATFORM_DEVELOPER} from "@models/AccessModels";
 import PageNavigation from "@app/navigation/PageNavigation";
 import {MainRoutes} from "@app/navigation/MainRoutes";
@@ -29,9 +29,11 @@ export function App() {
         const interval = setInterval(() => resetNotification(), 60000);
         const sub = ErrorEventBus.onApiError()?.subscribe(err => {
             console.log("ApiError", err?.config?.url, err)
-            if (err?.response?.status === 401 && AuthApi.authType === 'session') {
+            // A lost session routes to the SPA login page (which, in OIDC mode,
+            // shows the "Sign in with SSO" button) — never auto-redirect to the IdP.
+            if (isUnauthorized(err?.response?.status)) {
                 navigate(ROUTES.LOGIN);
-                window.location.reload();
+                if (AuthApi.authType === 'session') window.location.reload();
             }
         });
         return () => {

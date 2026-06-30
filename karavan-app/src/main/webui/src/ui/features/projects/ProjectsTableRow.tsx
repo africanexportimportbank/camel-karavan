@@ -2,7 +2,7 @@ import React from 'react';
 import {Badge, Button, Flex, FlexItem, Tooltip} from '@patternfly/react-core';
 import '@features/projects/Complexity.css';
 import {Td, Tr} from "@patternfly/react-table";
-import DeleteIcon from "@patternfly/react-icons/dist/js/icons/times-circle-icon";
+import DeleteIcon from "@patternfly/react-icons/dist/esm/icons/times-circle-icon";
 import CopyIcon from "@patternfly/react-icons/dist/esm/icons/copy-icon";
 import DownloadIcon from "@patternfly/react-icons/dist/esm/icons/download-icon";
 import {shallow} from "zustand/shallow";

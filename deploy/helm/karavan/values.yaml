@@ -1,0 +1,136 @@
+# Self-contained local Karavan install for Docker Desktop Kubernetes.
+# Deploys the Karavan control-plane app + a PostgreSQL instance. Git is
+# per-project: each project configures its own repository + branch and is pushed
+# with the owning user's credentials (System -> Git) — no external Gitea or
+# global repository is required.
+
+nameOverride: "karavan"
+
+image:
+  # Default is the official image. For Auth0 OIDC you must use an image whose
+  # SPA is built with the Auth0-aligned SsoApi (see deploy/README.md).
+  repository: ghcr.io/apache/camel-karavan
+  tag: "4.18.2"
+  pullPolicy: IfNotPresent
+  # Image pull secrets for private registries (e.g. AWS ECR). Leave empty for
+  # a local registry (localhost:5005) or public images.
+  pullSecrets: []
+  # - name: ecr-creds
+
+replicaCount: 1
+
+# Set true when served behind a TLS-terminating proxy/ALB (e.g. EKS + ALB) so
+# Quarkus trusts X-Forwarded-* for the OIDC redirect URL.
+behindTlsProxy: false
+
+# Extra JVM options appended to the container (e.g. -Djava.net.preferIPv4Stack=true
+# on networks without IPv6 egress). Empty by default.
+javaOptsAppend: ""
+
+# Dedicated ALB Ingress (cloud only). Off by default; the EKS overlay enables it
+# and supplies subnets/cert/hosts (see values-eks.yaml).
+ingress:
+  enabled: false
+  className: alb
+  registry:
+    enabled: false
+
+# Karavan deployment-environment. "dev" seeds built-in
+# kamelets/templates/configuration/documentation projects on first start.
+environment: "dev"
+
+# Authentication mode: "session" (built-in username/password) or "oidc" (Auth0).
+auth:
+  type: "session"
+
+  oidc:
+    # --- Backend (quarkus-oidc) ---
+    # Auth0 issuer base URL (no trailing slash); discovery is fetched from
+    # <authServerUrl>/.well-known/openid-configuration.
+    authServerUrl: "https://<your-oidc-issuer>"
+    # API Identifier in Auth0 — the access-token audience the backend validates.
+    audience: "https://<your-api-audience>/"
+    # web-app => Backend-for-Frontend: Quarkus runs the OIDC code flow and keeps
+    # tokens in a session cookie; the SPA never handles a token.
+    applicationType: "web-app"
+    # Claim (in the access token) that carries Karavan roles
+    # (platform-admin / platform-developer / platform-user). Auth0 namespaces
+    # custom claims; this one is namespaced on the tenant domain. The backend
+    # role-claim-path is double-quoted automatically (the name contains '/'+'.').
+    rolesClaim: "https://<your-oidc-issuer>/roles"
+
+    # Client credentials. Provide them at deploy time (NOT committed here):
+    #   --set auth.oidc.clientId=... --set auth.oidc.clientSecret=...
+    # or reference a pre-created Secret via existingSecret. The chart renders a
+    # Secret named "<release>-oidc" with keys client-id / client-secret.
+    clientId: ""
+    clientSecret: ""
+    # Use an already-existing Secret instead of rendering one from the values
+    # above. Must contain keys: client-id, client-secret.
+    existingSecret: ""
+
+# Reduce background polling noise on a laptop cluster.
+intervals:
+  containerStatus: "disabled"
+  containerStatistics: "disabled"
+  camelStatus: "3s"
+
+# Image used by the app to run integrations in dev-mode.
+devmodeImage: "ghcr.io/apache/camel-karavan-devmode:4.18.2"
+
+# Container registry the app builds/pushes project images to and the cluster
+# pulls them from. The chart renders a Secret named "karavan" that BOTH the app
+# (RegistryService) and the build pod read registry config from — without it,
+# project builds fail.
+#   * server MUST be reachable from the build pod (push) AND the kubelet (pull).
+#   * For a self-contained setup enable inCluster.enabled below — it deploys a
+#     registry at "registry:5000" (matching this default server).
+#   * For AWS use the EKS overlay (values-eks.yaml): ECR, or the in-cluster
+#     registry exposed over the ALB.
+# This default matches the in-cluster registry Service; it is only live once
+# inCluster.enabled=true (or you point server at your own registry).
+registry:
+  server: "registry:5000"
+  group: "karavan"
+  # Push credentials. Empty = anonymous push to an insecure local registry.
+  username: ""
+  password: ""
+  # Render the "karavan" registry Secret (required for project builds).
+  createSecret: true
+  # Run a standard, provider-agnostic CNCF Distribution registry IN the cluster
+  # for project images. Distribution creates repos on push (no pre-creation) and
+  # needs no auth token. When enabled, set server/serviceName so they match (see
+  # templates/registry-incluster.yaml for the EKS node-pull caveat — the kubelet
+  # needs a node-trusted cert, e.g. via an ALB + ACM cert). NOT usable via
+  # registry.k8s.io (that is read-only, Kubernetes system images only).
+  inCluster:
+    enabled: false
+    image: "registry:2.8.3"
+    serviceName: "registry"
+    port: 5000
+    storage: "10Gi"
+
+resources:
+  requests:
+    cpu: "250m"
+    memory: "1024Mi"
+  limits:
+    memory: "2048Mi"
+
+service:
+  type: NodePort
+  port: 80
+  targetPort: 8080
+  nodePort: 30777
+
+postgres:
+  enabled: true
+  image: "postgres:16-alpine"
+  database: "karavan"
+  username: "karavan"
+  password: "karavan"
+  storage: "2Gi"
+  resources:
+    requests:
+      cpu: "100m"
+      memory: "256Mi"

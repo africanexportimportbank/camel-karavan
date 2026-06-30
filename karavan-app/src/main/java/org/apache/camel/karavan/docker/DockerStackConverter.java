@@ -50,7 +50,7 @@ public class DockerStackConverter {
     }
 
     public static String toCode(DockerStack stack) {
-        Yaml yaml = new Yaml(new StackRepresenter());
+        Yaml yaml = new Yaml(new StackRepresenter(), new DumperOptions());
         return yaml.dumpAs(stack, Tag.MAP, DumperOptions.FlowStyle.BLOCK);
     }
 

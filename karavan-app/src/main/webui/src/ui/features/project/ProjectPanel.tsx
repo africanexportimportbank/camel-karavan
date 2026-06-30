@@ -1,18 +1,21 @@
-import React, {useEffect, useState} from 'react';
+import React, {lazy, Suspense, useEffect, useState} from 'react';
 import {shallow} from "zustand/shallow";
+import {Bullseye, Spinner} from "@patternfly/react-core";
 import {useFilesStore, useProjectStore} from '@stores/ProjectStore';
 import {useSelectorStore} from '@features/project/designer/DesignerStore';
 import {ProjectService} from '@services/ProjectService';
 import {BUILD_IN_PROJECTS, ProjectType} from '@models/ProjectModels';
-import {TopologyTab} from '@features/project/project-topology/TopologyTab';
+// Lazy-loaded: the react-topology graph stack (react-topology + dagre + elk, ~1.9MB)
+// is the single biggest non-editor dependency and is only needed on the architecture
+// tab — code-split it out of the initial app bundle.
+const TopologyTab = lazy(() => import('@features/project/project-topology/TopologyTab')
+    .then(m => ({default: m.TopologyTab})));
 import {CreateProjectModal} from '@features/project/files/CreateProjectModal';
 import {DslSelector} from '@features/project/designer/selector/DslSelector';
 import {BeanWizard} from '@features/project/beans/BeanWizard';
-import {BuildTab} from '@features/project/project-build/BuildTab';
 import {ReadmeTab} from "@features/project/readme/ReadmeTab";
 import {SourcesTab} from '@features/project/files/SourcesTab';
 import {useProjectFunctions} from "@features/project/ProjectContext";
-import {ContainerLogTab} from "@features/project/ContainerLogTab";
 import {ProjectContainersContextProvider} from "@features/project/ProjectContainersContextProvider";
 import {ContainersTab} from "@features/project/project-containers/ContainersTab";
 import {PodTab} from "@features/project/project-pod/PodTab";
@@ -50,7 +53,9 @@ export function ProjectPanel() {
 
     return isTopology
         ? (<div className="project-architecture-page">
-                <TopologyTab asyncApiJson={asyncApiJson}/>
+                <Suspense fallback={<Bullseye><Spinner aria-label="Loading topology"/></Bullseye>}>
+                    <TopologyTab asyncApiJson={asyncApiJson}/>
+                </Suspense>
                 <CreateProjectModal/>
                 {showSelector && <DslSelector onDslSelect={createNewRouteFile} showFileNameInput={true}/>}
                 <BeanWizard/>
@@ -58,12 +63,12 @@ export function ProjectPanel() {
         )
         : (
             <div style={{display: 'flex', flexDirection: 'column', height: '100%'}}>
+                {/* The dev (execution) + build logs now live in the bottom console
+                    drawer, so the old full-panel 'log' / 'build' tabs are gone — they
+                    would render a second log viewer redundant with the console. */}
                 {tab === 'source' && <SourcesTab/>}
-                {!buildIn && tab === "build" && <BuildTab/>}
-                {/*{!buildIn && tab === "build" && config.infrastructure !== 'kubernetes' && <ImagesPanel/>}*/}
                 {!buildIn && tab === 'readme' && <ReadmeTab/>}
                 {!buildIn && tab === 'pod' && <ProjectContainersContextProvider><PodTab/></ProjectContainersContextProvider>}
-                {!buildIn && tab === 'log' && <ProjectContainersContextProvider><ContainerLogTab/></ProjectContainersContextProvider>}
                 {!buildIn && tab === 'containers' && <ProjectContainersContextProvider><ContainersTab/></ProjectContainersContextProvider>}
             </div>
         )

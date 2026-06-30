@@ -35,9 +35,12 @@ export const LoginPage: React.FunctionComponent = () => {
     const [passwordHidden, setPasswordHidden] = React.useState(true);
     const [showError, setShowError] = React.useState(false);
     const [error, setError] = React.useState('');
-    const {reload} = useContext(AuthContext);
+    const {reload, authType} = useContext(AuthContext);
     const { readiness } = useReadinessStore();
 
+    // In OIDC (BFF) mode we do NOT auto-redirect to the IdP on navigation — the
+    // page renders a "Sign in with SSO" button and only that click starts the
+    // server-side login (window.location.assign('/auth/login') in getRightSide).
 
     function onLoginButtonClick(event: any) {
         event.preventDefault();
@@ -142,24 +145,27 @@ export const LoginPage: React.FunctionComponent = () => {
 
 
     function getRightSide() {
+        const oidc = authType === 'oidc';
         return (
             <div className="karavan-form-panel dark-form">
                 <div className="form-wrapper">
                     <Card className="login" isLarge>
                         <CardHeader>
                             <div style={{display: "flex", flexDirection: 'row', justifyContent: 'space-between', alignItems: "center"}}>
-                                <Content component='h3' className="login-header">Login</Content>
+                                <Content component='h3' className="login-header">{oidc ? "Single Sign-On" : "Login"}</Content>
                                 <PlatformVersion environment={readiness?.environment}/>
                             </div>
                         </CardHeader>
                         <CardBody>
-                            {getLoginForm()}
+                            {oidc
+                                ? <Content component="p">Sign in with your organization account to continue.</Content>
+                                : getLoginForm()}
                         </CardBody>
                         <CardFooter style={{ textAlign: "center" }}>
                             <Button variant="primary"
-                                    onClick={onLoginButtonClick}
+                                    onClick={oidc ? () => window.location.assign('/auth/login') : onLoginButtonClick}
                             >
-                                Access Platform
+                                {oidc ? "Sign in with SSO" : "Access Platform"}
                             </Button>
                         </CardFooter>
                     </Card>

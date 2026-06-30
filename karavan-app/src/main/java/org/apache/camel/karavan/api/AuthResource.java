@@ -39,19 +39,6 @@ public class AuthResource extends AbstractApiResource {
         return Response.ok(authType).build();
     }
 
-    @GET
-    @Path("/sso-config")
-    @PermitAll
-    @Produces(MediaType.APPLICATION_JSON)
-    public Response ssoConfig() throws Exception {
-        Map<String, String> getSsoConfig = Map.of(
-                "url", ConfigProvider.getConfig().getValue("karavan.keycloak.url", String.class),
-                "realm", ConfigProvider.getConfig().getValue("karavan.keycloak.realm", String.class),
-                "clientId", ConfigProvider.getConfig().getValue("karavan.keycloak.frontend.clientId", String.class)
-        );
-        return Response.ok(getSsoConfig).build();
-    }
-
     @POST
     @Path("/login")
     @PermitAll
@@ -112,6 +99,12 @@ public class AuthResource extends AbstractApiResource {
     public Response me(@Context SecurityContext sc) {
         var username = getIdentity().getString("username");
         var user = karavanCache.getUser(username);
+        // In OIDC (BFF) mode the principal comes from the IdP token and is not in
+        // the local user cache; build the response from the SecurityIdentity
+        // (username + roles + email) so the SPA still gets a populated user.
+        if (user == null) {
+            return Response.ok(getIdentity()).build();
+        }
         return Response.ok(user).build();
     }
 }

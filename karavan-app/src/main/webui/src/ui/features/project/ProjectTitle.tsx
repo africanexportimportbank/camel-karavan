@@ -16,7 +16,8 @@
  */
 
 import React from 'react';
-import {ClipboardCopy, Content, Flex, FlexItem,} from '@patternfly/react-core';
+import {ClipboardCopy, Content, Flex, FlexItem, Label, Tooltip,} from '@patternfly/react-core';
+import CodeBranchIcon from "@patternfly/react-icons/dist/esm/icons/code-branch-icon";
 import {useFileStore, useProjectStore} from "@stores/ProjectStore";
 import {shallow} from "zustand/shallow";
 
@@ -40,6 +41,15 @@ export function ProjectTitle() {
                         {project?.projectId}
                     </ClipboardCopy>
                 </FlexItem>
+                {project?.gitRepository &&
+                    <FlexItem>
+                        <Tooltip content={project.gitRepository}>
+                            <Label color="blue" isCompact icon={<CodeBranchIcon/>}>
+                                {project.gitBranch || 'default'}
+                            </Label>
+                        </Tooltip>
+                    </FlexItem>
+                }
             </Flex>
         )
     }

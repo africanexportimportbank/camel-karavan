@@ -5,7 +5,7 @@ import {Td, Tr} from '@patternfly/react-table';
 import {FileCsvIcon, FileIcon, SearchIcon} from '@patternfly/react-icons';
 import {APPLICATION_PROPERTIES, DOCKER_COMPOSE, DOCKER_STACK, KUBERNETES_YAML, ProjectFile} from "@models/ProjectModels";
 import FileSaver from "file-saver";
-import {DockerIcon} from "@patternfly/react-icons/dist/js/icons/docker-icon";
+import {DockerIcon} from "@patternfly/react-icons/dist/esm/icons/docker-icon";
 import {KubernetesIcon} from "@features/project/designer/icons/ComponentIcons";
 import {JKubeIcon} from "@features/project/designer/icons/KaravanIcons";
 import {camelIcon, CamelUi} from "@features/project/designer/utils/CamelUi";

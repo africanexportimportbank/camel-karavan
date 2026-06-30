@@ -16,6 +16,7 @@ import {ContainersTable} from "@features/system/containers/ContainersTable";
 import {ContainerLogTab} from "@features/project/ContainerLogTab";
 import {useSelectedContainerStore} from "@stores/ProjectStore";
 import {DeploymentStatusesTable} from "@features/system/deployments/DeploymentStatusesTable";
+import {GitSettingsTab} from "@features/system/git/GitSettingsTab";
 import {KaravanApi} from "@api/KaravanApi";
 import {EventBus} from "@features/project/designer/utils/EventBus";
 import {Clean} from "@carbon/icons-react";
@@ -138,7 +139,7 @@ export const SystemPage = () => {
             mainPanel={
                 <div className="right-panel-card">
                     <div style={{display: 'flex', flexDirection: 'column', height: '100%'}}>
-                        {tabIndex !== 'log' && tools()}
+                        {tabIndex !== 'log' && tabIndex !== 'git' && tools()}
                         {tabIndex === 'containers' && <ContainersTable/>}
                         {tabIndex === 'deployments' && <DeploymentStatusesTable/>}
                         {tabIndex === 'secrets' && <SecretsTable/>}
@@ -147,6 +148,7 @@ export const SystemPage = () => {
                         <ConfigMapModal isOpen={isNewConfigMapOpen} onCancel={() => setIsNewConfigMapOpen(false)} onAfterCreated={() => setIsNewConfigMapOpen(false)}/>
                         {tabIndex === 'envVars' && <EnvVarsTable/>}
                         {tabIndex === 'appProps' && <AppPropsTable/>}
+                        {tabIndex === 'git' && <GitSettingsTab/>}
                         {tabIndex === 'log' && <ContainerLogTab/>}
                     </div>
                 </div>

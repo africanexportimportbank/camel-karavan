@@ -36,7 +36,12 @@ export function ProjectContainersContextProvider({children}: ProjectContainersCo
     const isProjectContainer = packagedContainerStatuses.length > 0;
     const packagedIsRunning = isProjectContainer && (packagedContainerStatuses.filter(c => c.state === 'running').length === packagedContainerStatuses.length);
 
-    const devModeContainerStatus = containerStatuses.filter(c => c.type === 'devmode').at(0);
+    // Only treat a devmode row as a real container when it's actually live. A stale
+    // 'unknown'/no-pod devmode status (e.g. a dev-mode start that never produced a pod)
+    // must NOT poison the toolbar and permanently disable the Run button.
+    const isLiveContainer = (c: ContainerStatus) =>
+        c.state === 'running' || (c.state !== 'unknown' && !!c.containerId && c.containerId.length > 0);
+    const devModeContainerStatus = containerStatuses.filter(c => c.type === 'devmode' && isLiveContainer(c)).at(0);
     const devModeIsRunning = devModeContainerStatus?.state === 'running';
 
     const buildContainerStatus = containerStatuses.filter(c => c.type === 'build').at(0);

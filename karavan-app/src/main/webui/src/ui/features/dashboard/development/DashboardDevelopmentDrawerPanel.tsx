@@ -1,6 +1,6 @@
 import React from 'react';
 import {Button, Content, Divider, DrawerHead, DrawerPanelBody, DrawerPanelContent,} from '@patternfly/react-core';
-import TimesIcon from "@patternfly/react-icons/dist/js/icons/times-icon";
+import TimesIcon from "@patternfly/react-icons/dist/esm/icons/times-icon";
 import {useDashboardStore} from "@stores/DashboardStore";
 import {DashboardDevelopmentProjectPanel} from "@features/dashboard/development/DashboardDevelopmentProjectPanel";
 
