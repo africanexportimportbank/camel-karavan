@@ -219,7 +219,6 @@ public class ContainerResource {
         }
     }
 
-    // TODO: implement log watch
     @GET
     @Path("/log/watch/{env}/{name}")
     @Authenticated

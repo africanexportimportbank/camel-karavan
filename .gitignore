@@ -1,4 +1,8 @@
-#Maven
+# Gradle
+.gradle/
+# (per-module build/ dirs are already ignored by the `build` entry under Typescript)
+
+# Maven (legacy — pom.xml files were removed; kept in case tooling regenerates them)
 target/
 pom.xml.tag
 pom.xml.releaseBackup
@@ -57,6 +61,8 @@ yarn-error.log*
 /.java-version
 /keys/*
 *.jar
+# …but the Gradle wrapper jar MUST be committed so ./gradlew can bootstrap on a fresh checkout.
+!gradle/wrapper/gradle-wrapper.jar
 
 **/*.tgz
 **/*.vsix
@@ -90,9 +96,6 @@ stats.html
 
 .claude/
 CLAUDE.md
-start.md
-structure.md
-styling.md
 # Account-specific deploy artifacts (AWS account id / cluster ARNs / hostnames).
 # Keep deploy/helm/karavan/values-eks.example.yaml as the committed template.
 deploy/eks/

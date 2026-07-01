@@ -157,7 +157,7 @@ export class ProjectService {
                 }
                 after?.(res)
             } else {
-                // console.log(res) //TODO show notification
+                EventBus.sendAlert('Error saving file', res.statusText, 'warning')
             }
         })
     }

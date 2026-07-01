@@ -47,7 +47,7 @@ LOCAL_PORT   ?= 18080
 
 HELM         ?= helm
 KUBECTL      ?= kubectl
-MVN          ?= mvn
+GRADLE       ?= ./gradlew
 NPM          ?= npm
 DOCKER       ?= docker
 
@@ -75,8 +75,6 @@ AWS_PROFILE_FLAG := $(if $(strip $(AWS_PROFILE)),--profile $(strip $(AWS_PROFILE
 OIDC_CLIENT_ID     ?=
 OIDC_CLIENT_SECRET ?=
 
-GENERATOR_MAIN := org.apache.camel.karavan.generator.KaravanGenerator
-
 .DEFAULT_GOAL := help
 SHELL := /bin/bash
 
@@ -92,7 +90,7 @@ help: ## Show this help
 # ==========================================================================
 .PHONY: generate
 generate: ## STEP 1: generate Camel TS models/API into karavan-core (run from repo root)
-	$(MVN) clean compile exec:java -Dexec.mainClass="$(GENERATOR_MAIN)" -f karavan-generator
+	$(GRADLE) :karavan-generator:run
 
 .PHONY: core
 core: ## STEP 2: build/install the TS core library (runs build + Mocha tests)
@@ -100,14 +98,15 @@ core: ## STEP 2: build/install the TS core library (runs build + Mocha tests)
 
 .PHONY: app
 app: ## STEP 3: package the Quarkus app + SPA (uber-jar, public profile)
-	$(MVN) clean package -f karavan-app -Dquarkus.profile=public
+	$(GRADLE) :karavan-app:build -Dquarkus.profile=public
 
 .PHONY: build
 build: generate core app ## Full local build chain (generate -> core -> app)
 
 .PHONY: image-build
-image-build: ## Build the container image $(IMAGE) (Auth0-aligned SPA) via Quarkus
-	$(MVN) -B -ntp -DskipTests package -f karavan-app -Dquarkus.profile=public \
+image-build: ## Build the container image $(IMAGE) (Auth0-aligned SPA) via Quarkus Jib
+	# Jib loads a single-arch (host) image into the local Docker daemon for image-push.
+	$(GRADLE) :karavan-app:quarkusBuild -Dquarkus.profile=public \
 		-Dquarkus.container-image.build=true \
 		-Dquarkus.container-image.image=$(IMAGE)
 
