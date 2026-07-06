@@ -364,6 +364,7 @@ public class ProjectService {
             // (created by Karavan earlier, later deleted locally — deletion never
             // touches the remote) is IMPORTED from the remote, not regenerated.
             if (gitService.hasRemote(projectFolder) && importFromRemoteIfPresent(projectFolder)) {
+                ensureEssentialProjectFiles(karavanCache.getProject(projectFolder.getProjectId()));
                 return karavanCache.getProject(projectFolder.getProjectId());
             }
             ProjectFile appProp = codeService.generateApplicationProperties(projectFolder);
@@ -405,10 +406,42 @@ public class ProjectService {
         // the repo of a previously deleted project) imports its content — the
         // remote is the source of truth. An empty/new remote leaves local files
         // untouched (they get published on the first push).
-        if (hasRepo) {
-            importFromRemoteIfPresent(p);
+        if (hasRepo && importFromRemoteIfPresent(p)) {
+            ensureEssentialProjectFiles(karavanCache.getProject(projectId));
         }
         return karavanCache.getProject(projectId);
+    }
+
+    /**
+     * A repo created outside Karavan (or holding a partial project) may lack the
+     * files the platform itself needs. Without application.properties devmode
+     * cannot resolve image/runtime, and without the deployment/compose file the
+     * container cannot start (a null jkube fragment NPEd devmode on k8s). Never
+     * overwrites imported content - only fills the gaps.
+     */
+    private void ensureEssentialProjectFiles(ProjectFolder projectFolder) {
+        if (projectFolder == null) {
+            return;
+        }
+        String projectId = projectFolder.getProjectId();
+        if (karavanCache.getProjectFile(projectId, APPLICATION_PROPERTIES_FILENAME) == null) {
+            log.info("Imported project {} has no application.properties - generating", projectId);
+            karavanCache.saveProjectFile(codeService.generateApplicationProperties(projectFolder), null, true);
+        }
+        if (ConfigService.inKubernetes()) {
+            if (karavanCache.getProjectFile(projectId, PROJECT_DEPLOYMENT_JKUBE_FILENAME) == null) {
+                log.info("Imported project {} has no {} - generating", projectId, PROJECT_DEPLOYMENT_JKUBE_FILENAME);
+                karavanCache.saveProjectFile(codeService.createInitialDeployment(projectFolder), null, true);
+            }
+        } else if (configService.inDockerSwarmMode()) {
+            if (karavanCache.getProjectFile(projectId, PROJECT_STACK_FILENAME) == null) {
+                karavanCache.saveProjectFile(codeService.createInitialProjectStack(projectFolder, getMaxPortMappedInProjects() + 1), null, true);
+            }
+        } else {
+            if (karavanCache.getProjectFile(projectId, PROJECT_COMPOSE_FILENAME) == null) {
+                karavanCache.saveProjectFile(codeService.createInitialProjectCompose(projectFolder, getMaxPortMappedInProjects() + 1), null, true);
+            }
+        }
     }
 
     /**
