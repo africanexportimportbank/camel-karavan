@@ -411,12 +411,16 @@ public class KubernetesService {
 
     private Pod getDevModePod(String name, Boolean verbose, Boolean compile, Map<String, String> labels, String projectDevmodeImage, String deploymentFragment, Map<String, String> envVars, String runtime, String quarkusVersion) {
 
-        Deployment deployment = Serialization.unmarshal(deploymentFragment, Deployment.class);
-        PodSpec podSpec = null;
-        try {
-            podSpec = deployment.getSpec().getTemplate().getSpec();
-        } catch (Exception ignored) {
-            podSpec = new PodSpec();
+        // Projects imported from external repos may lack deployment.jkube.yaml -
+        // devmode must still start (unmarshal(null) NPEs inside fabric8).
+        PodSpec podSpec = new PodSpec();
+        if (deploymentFragment != null && !deploymentFragment.isBlank()) {
+            try {
+                Deployment deployment = Serialization.unmarshal(deploymentFragment, Deployment.class);
+                podSpec = deployment.getSpec().getTemplate().getSpec();
+            } catch (Exception ignored) {
+                podSpec = new PodSpec();
+            }
         }
         List<VolumeMount> volumeMounts = new ArrayList<>();
         try {
