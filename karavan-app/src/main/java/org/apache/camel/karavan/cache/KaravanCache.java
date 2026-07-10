@@ -20,9 +20,7 @@ import io.vertx.core.eventbus.EventBus;
 import jakarta.enterprise.inject.Default;
 import jakarta.inject.Inject;
 import jakarta.inject.Singleton;
-import org.apache.camel.karavan.model.ActivityUser;
-import org.apache.camel.karavan.service.AuthService;
-import org.jboss.logging.Logger;
+import org.apache.camel.karavan.model.*;
 
 import java.time.Instant;
 import java.util.*;
@@ -30,44 +28,39 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 import static org.apache.camel.karavan.KaravanConstants.DEV;
+import static org.apache.camel.karavan.KaravanConstants.USER_ADMIN;
 import static org.apache.camel.karavan.KaravanEvents.*;
 import static org.apache.camel.karavan.cache.CacheEvent.Operation.DELETE;
 import static org.apache.camel.karavan.cache.CacheEvent.Operation.SAVE;
 import static org.apache.camel.karavan.cache.CacheUtils.query;
 import static org.apache.camel.karavan.cache.CacheUtils.queryFirst;
-import static org.apache.camel.karavan.service.AuthService.USER_ADMIN;
 
 @Default
 @Singleton
 public class KaravanCache {
 
-    @Inject
-    EventBus eventBus;
-
-    static final Logger LOGGER = Logger.getLogger(KaravanCache.class.getName());
+    // DB key namespace for commited (Source view) rows - live rows own the bare keys
+    private static final String COMMITED_KEY_PREFIX = "commited:";
 
     final Map<String, ProjectFolder> folders = new ConcurrentHashMap<>();
     final Map<String, ProjectFolderCommited> foldersCommited = new ConcurrentHashMap<>();
     final Map<String, ProjectFile> files = new ConcurrentHashMap<>();
     final Map<String, ProjectFileCommited> filesCommited = new ConcurrentHashMap<>();
-
     final Map<String, DeploymentStatus> deploymentStatuses = new ConcurrentHashMap<>();
     final Map<String, PodContainerStatus> podContainerStatuses = new ConcurrentHashMap<>();
     final Map<String, ServiceStatus> serviceStatuses = new ConcurrentHashMap<>();
     final Map<String, CamelStatus> camelStatuses = new ConcurrentHashMap<>();
-
     final Map<String, AccessUser> users = new ConcurrentHashMap<>();
-    final Map<String, AccessPassword> passwords = new ConcurrentHashMap<>();
     final Map<String, AccessRole> roles = new ConcurrentHashMap<>();
     final Map<String, AccessSession> sessions = new ConcurrentHashMap<>();
     final Map<String, UserGitConfig> gitConfigs = new ConcurrentHashMap<>();
-
     final Map<String, Map<String, Instant>> projectActivities = new ConcurrentHashMap<>();
     final Map<String, ActivityUser> usersWorking = new ConcurrentHashMap<>();
     final Map<String, ActivityUser> usersHeartBeat = new ConcurrentHashMap<>();
-
     final Map<String, List<ProjectFolderCommit>> lastFolderCommits = new ConcurrentHashMap<>();
     final Map<String, SystemCommit> systemCommits = new ConcurrentHashMap<>();
+    @Inject
+    EventBus eventBus;
 
     public List<ProjectFolderCommit> getProjectLastCommits(String projectId) {
         return lastFolderCommits.get(projectId);
@@ -80,8 +73,9 @@ public class KaravanCache {
     public void saveSystemCommit(SystemCommit commit) {
         systemCommits.put(commit.getId(), commit);
     }
+
     public void saveSystemCommits(List<SystemCommit> commits) {
-        commits.forEach(this::saveSystemCommit);;
+        commits.forEach(this::saveSystemCommit);
     }
 
     public List<SystemCommit> getSystemLastCommits() {
@@ -96,7 +90,7 @@ public class KaravanCache {
 
     public void saveProject(ProjectFolder projectFolder, boolean persist) {
         var key = GroupedKey.create(projectFolder.getProjectId(), DEV, projectFolder.getProjectId());
-        if (projectFolder.lastUpdate == 0) {
+        if (projectFolder.getLastUpdate() == 0) {
             projectFolder.setLastUpdate(Instant.now().getEpochSecond() * 1000L);
         }
         folders.put(key, projectFolder);
@@ -123,13 +117,27 @@ public class KaravanCache {
     }
 
     public void saveProjectCommited(ProjectFolderCommited projectFolder) {
+        saveProjectCommited(projectFolder, true);
+    }
+
+    /**
+     * Commited (Source view) state must survive restarts: with per-project git
+     * there is no startup re-import to rebuild it, so it is persisted like any
+     * other cache type (persist=false only during hydration).
+     */
+    public void saveProjectCommited(ProjectFolderCommited projectFolder, boolean persist) {
         var key = GroupedKey.create(projectFolder.getProjectId(), DEV, projectFolder.getProjectId());
         foldersCommited.put(key, projectFolder);
+        if (persist) {
+            // "commited:" prefix: the live ProjectFolder row already owns this key
+            eventBus.publish(PERSIST_PROJECT, new CacheEvent(COMMITED_KEY_PREFIX + key, SAVE, projectFolder));
+        }
     }
 
     public void deleteProjectCommited(String projectId) {
         var key = GroupedKey.create(projectId, DEV, projectId);
         foldersCommited.remove(key);
+        eventBus.publish(PERSIST_PROJECT, new CacheEvent(COMMITED_KEY_PREFIX + key, DELETE, null));
     }
 
     public ProjectFolderCommited getProjectCommited(String projectId) {
@@ -204,16 +212,25 @@ public class KaravanCache {
     }
 
     public void deleteProjectFileCommited(String projectId) {
-        getProjectFilesCommited(projectId).forEach(file -> {
-            filesCommited.remove(GroupedKey.create(projectId, DEV, file.name));
-        });
+        getProjectFilesCommited(projectId).forEach(file -> deleteProjectFileCommited(projectId, file.getName()));
     }
+
     public void deleteProjectFileCommited(String projectId, String filename) {
-        filesCommited.remove(GroupedKey.create(projectId, DEV, filename));
+        var key = GroupedKey.create(projectId, DEV, filename);
+        filesCommited.remove(key);
+        eventBus.publish(PERSIST_PROJECT, new CacheEvent(COMMITED_KEY_PREFIX + key, DELETE, null));
     }
 
     public void saveProjectFileCommited(ProjectFileCommited file) {
-        filesCommited.put(GroupedKey.create(file.getProjectId(), DEV, file.getName()), file);
+        saveProjectFileCommited(file, true);
+    }
+
+    public void saveProjectFileCommited(ProjectFileCommited file, boolean persist) {
+        var key = GroupedKey.create(file.getProjectId(), DEV, file.getName());
+        filesCommited.put(key, file);
+        if (persist) {
+            eventBus.publish(PERSIST_PROJECT, new CacheEvent(COMMITED_KEY_PREFIX + key, SAVE, file));
+        }
     }
 
     // --- Deployment Status ---
@@ -362,17 +379,12 @@ public class KaravanCache {
                     && Objects.equals(status.getEnv(), env);
         });
     }
-    
+
     public void deleteAllCamelStatuses() {
         camelStatuses.clear();
     }
 
     // --- Access & Sessions ---
-
-    public AccessPassword getPassword(String username) {
-        var key = GroupedKey.create(AccessPassword.class.getSimpleName(), DEV, username);
-        return passwords.get(key);
-    }
 
     public AccessUser getUser(String username) {
         var key = GroupedKey.create(AccessUser.class.getSimpleName(), DEV, username);
@@ -387,23 +399,9 @@ public class KaravanCache {
     public List<AccessUser> getUsers() {
         return new ArrayList<>(users.values().stream().toList());
     }
+
     public List<AccessRole> getRoles() {
         return new ArrayList<>(roles.values().stream().toList());
-    }
-
-    public void saveUser(AccessUser user, boolean persist) {
-        var key = GroupedKey.create(user.getClass().getSimpleName(), DEV, user.username);
-        users.put(key, user);
-        if (persist) {
-            eventBus.send(PERSIST_ACCESS, new CacheEvent(key, SAVE, user));
-        }
-    }
-    public void savePassword(AccessPassword pass, boolean persist) {
-        var key = GroupedKey.create(pass.getClass().getSimpleName(), DEV, pass.username);
-        passwords.put(key, pass);
-        if (persist) {
-            eventBus.send(PERSIST_ACCESS, new CacheEvent(key, SAVE, pass));
-        }
     }
 
     public void saveRole(AccessRole role, boolean persist) {
@@ -411,6 +409,14 @@ public class KaravanCache {
         roles.put(key, role);
         if (persist) {
             eventBus.send(PERSIST_ACCESS, new CacheEvent(key, SAVE, role));
+        }
+    }
+
+    public void saveUser(AccessUser user, boolean persist) {
+        var key = GroupedKey.create(user.getClass().getSimpleName(), DEV, user.username);
+        users.put(key, user);
+        if (persist) {
+            eventBus.send(PERSIST_ACCESS, new CacheEvent(key, SAVE, user));
         }
     }
 
@@ -424,7 +430,7 @@ public class KaravanCache {
 
     public void deleteRole(AccessRole role) {
         var key = GroupedKey.create(role.getClass().getSimpleName(), DEV, role.name);
-        if (!AuthService.getAllRoles().contains(role.name)) {
+        if (!org.apache.camel.karavan.KaravanConstants.getAllRoles().contains(role.name)) {
             roles.remove(key, role);
             eventBus.send(PERSIST_ACCESS, new CacheEvent(key, DELETE, null));
         }

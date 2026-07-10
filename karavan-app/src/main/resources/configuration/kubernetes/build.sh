@@ -18,9 +18,19 @@ git_credential_fill() {
     echo password=$GIT_PASSWORD
 }
 git_credential_fill | git credential approve
-git clone --depth 1 --branch $GIT_BRANCH $GIT_REPOSITORY $CODE_DIR
+# CODE_DIR (/karavan/code) ships NON-EMPTY in the in-app-built devmode image
+# (kamelets/ layer) and `git clone` refuses a non-empty target — clone the build
+# source into its own fresh directory instead.
+SRC_DIR=${CODE_DIR}-src
+rm -rf $SRC_DIR
+git clone --depth 1 --branch $GIT_BRANCH $GIT_REPOSITORY $SRC_DIR
 
-cd $CODE_DIR/$PROJECT_ID
+cd $SRC_DIR/$PROJECT_ID
+
+# Per-project Camel version (camel.jbang.camelVersion in application.properties) wins
+# over the devmode image default, so each project can build on its own Camel version.
+PROJECT_CAMEL_VERSION=$(grep -E "^camel.jbang.camelVersion=" application.properties 2>/dev/null | head -1 | cut -d= -f2)
+CAMEL_VERSION=${PROJECT_CAMEL_VERSION:-$CAMEL_VERSION}
 
 # Build the project image for the cluster's node architecture. The build pod runs
 # on the same node pool as the workloads, so `uname -m` is the target arch. Without
@@ -111,10 +121,19 @@ case "${CAMEL_RUNTIME}" in
     # EXPLODED makes it use the raw target/classes (-> /app/classes) + flat deps
     # (-> /app/libs); the entrypoint then resolves the main class. jkube (already in the
     # generated pom) applies the k8s manifests.
-    mvn package jib:build k8s:resource k8s:apply \
+    # Invoke jib + jkube by FULL COORDINATES: Camel 4.18 exports no longer add
+    # the jib/jkube plugins to the generated pom, so bare prefixes (jib:build,
+    # k8s:apply) fail with NoPluginFoundForPrefixException.
+    mvn package \
+      com.google.cloud.tools:jib-maven-plugin:${JIB_VERSION}:build \
+      org.eclipse.jkube:kubernetes-maven-plugin:${JKUBE_VERSION}:resource \
+      org.eclipse.jkube:kubernetes-maven-plugin:${JKUBE_VERSION}:apply \
+      -DskipTests \
       -Djib.containerizingMode=exploded \
       -Djkube.namespace=${NAMESPACE} \
       -Djkube.imagePullPolicy=Always \
+      -Djkube.skip.build=true \
+      -Djkube.image.name=${TARGET_IMAGE} \
       -Djib.from.image=${JIB_BASE_IMAGE} \
       -Djib.from.platforms=${JIB_PLATFORM} \
       -Djib.allowInsecureRegistries=true \

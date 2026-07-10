@@ -25,11 +25,12 @@ import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
-import org.apache.camel.karavan.cache.ProjectFolder;
-import org.apache.camel.karavan.cache.UserGitConfig;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.camel.karavan.model.ProjectFolder;
+import org.apache.camel.karavan.service.DevModeHotReloadService;
+import org.apache.camel.karavan.model.UserGitConfig;
 import org.apache.camel.karavan.service.GitService;
 import org.apache.camel.karavan.service.ProjectService;
-import org.jboss.logging.Logger;
 
 import java.util.HashMap;
 import java.util.List;
@@ -37,10 +38,12 @@ import java.util.Objects;
 
 import static org.apache.camel.karavan.KaravanEvents.CMD_PUSH_PROJECT;
 
+@Slf4j
 @Path("/ui/git")
 public class ProjectGitResource extends AbstractApiResource {
 
-    private static final Logger LOGGER = Logger.getLogger(ProjectGitResource.class.getName());
+    @Inject
+    DevModeHotReloadService devModeHotReloadService;
 
     @Inject
     ProjectService projectService;
@@ -71,7 +74,7 @@ public class ProjectGitResource extends AbstractApiResource {
             return Response.ok(JsonObject.of("branches", branches)).build();
         } catch (Exception e) {
             String raw = e.getCause() != null ? e.getCause().getMessage() : e.getMessage();
-            LOGGER.errorf("Error listing remote branches for %s (user=%s, hasCreds=%s): %s",
+            log.error("Error listing remote branches for {} (user={}, hasCreds={}): {}",
                     repository, username, hasCreds, raw);
             String msg;
             if (!hasCreds) {
@@ -114,11 +117,13 @@ public class ProjectGitResource extends AbstractApiResource {
         try {
             requireGitOwner(projectId);
             projectService.importProject(projectId, getIdentity().getString("username"));
+            // pulled files land in the cache — hot-reload a running devmode container
+            devModeHotReloadService.projectFilesChanged(projectId);
             return Response.ok().build();
         } catch (WebApplicationException e) {
             throw e;
         } catch (Exception e) {
-            LOGGER.error(e.getMessage());
+            log.error(e.getMessage());
             return Response.serverError().entity(e.getMessage()).build();
         }
     }

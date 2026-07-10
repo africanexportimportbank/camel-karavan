@@ -18,51 +18,45 @@ package org.apache.camel.karavan.api;
 
 import io.quarkus.security.Authenticated;
 import jakarta.inject.Inject;
+import jakarta.validation.Valid;
 import jakarta.ws.rs.*;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.SecurityContext;
-import org.apache.camel.karavan.cache.*;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.camel.karavan.cache.KaravanCache;
 import org.apache.camel.karavan.docker.DockerService;
 import org.apache.camel.karavan.kubernetes.KubernetesService;
+import org.apache.camel.karavan.model.*;
 import org.apache.camel.karavan.service.ConfigService;
-import org.apache.camel.karavan.service.GitService;
 import org.apache.camel.karavan.service.ProjectService;
-import org.jboss.logging.Logger;
 
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Objects;
 
+@Slf4j
 @Path("/ui/project")
+@RequiredArgsConstructor(onConstructor_ = {@Inject})
 public class ProjectResource extends AbstractApiResource {
-    private static final Logger LOGGER = Logger.getLogger(ProjectResource.class.getName());
 
-    @Inject
-    KaravanCache karavanCache;
+    private final KaravanCache karavanCache;
 
-    @Inject
-    KubernetesService kubernetesService;
+    private final KubernetesService kubernetesService;
 
-    @Inject
-    DockerService dockerService;
+    private final DockerService dockerService;
 
-    @Inject
-    GitService gitService;
 
-    @Inject
-    DevModeResource devModeResource;
+    private final DevModeResource devModeResource;
 
-    @Inject
-    ContainerResource containerResource;
+    private final ContainerResource containerResource;
 
-    @Inject
-    InfrastructureResource infrastructureResource;
+    private final InfrastructureResource infrastructureResource;
 
-    @Inject
-    ProjectService projectService;
+    private final ProjectService projectService;
 
     @GET
     @Authenticated
@@ -91,7 +85,7 @@ public class ProjectResource extends AbstractApiResource {
     @Authenticated
     @Produces(MediaType.APPLICATION_JSON)
     @Consumes(MediaType.APPLICATION_JSON)
-    public Response create(ProjectFolder projectFolder, @QueryParam("sample") boolean sample) {
+    public Response create(@Valid ProjectFolder projectFolder, @QueryParam("sample") boolean sample) {
         try {
             // A configured Git remote is owned by its creator (restricted to him).
             String username = getIdentity().getString("username");
@@ -100,6 +94,9 @@ public class ProjectResource extends AbstractApiResource {
             } else {
                 projectFolder.setGitOwner(null);
             }
+            // Audit: record the creator; feeds the project write-access check.
+            projectFolder.setCreatedBy(username);
+            projectFolder.setCreatedAt(java.time.Instant.now().toEpochMilli());
             return Response.ok(projectService.create(projectFolder, sample)).build();
         } catch (Exception e) {
             return Response.status(Response.Status.CONFLICT).entity(e.getMessage()).build();
@@ -112,52 +109,36 @@ public class ProjectResource extends AbstractApiResource {
     @Path("/{project}")
     public void delete(@PathParam("project") String project, @QueryParam("deleteContainers") boolean deleteContainers, @Context SecurityContext securityContext) throws Exception {
         String projectId = URLDecoder.decode(project, StandardCharsets.UTF_8);
-        // Capture the project + the acting user's git creds before cache eviction,
-        // so the git delete targets the project's own remote with the user's token.
         ProjectFolder projectFolder = karavanCache.getProject(projectId);
         if (projectFolder == null) {
             // Already gone — deletion is idempotent, return 204 instead of NPE-ing.
-            LOGGER.info("Project " + projectId + " already deleted");
+            log.info("Project " + projectId + " already deleted");
             return;
         }
-        var identity = getIdentity();
-        String username = identity.getString("username");
-        boolean hasRemote = gitService.hasRemote(projectFolder);
-        // A project's remote is restricted to its owner: a non-owner may not push
-        // a deletion commit to it (deny the whole delete to keep cache and remote
-        // consistent). This is the only legitimate failure of this endpoint.
-        if (hasRemote && projectFolder.getGitOwner() != null && !Objects.equals(projectFolder.getGitOwner(), username)) {
-            throw new WebApplicationException("Git remote is restricted to " + projectFolder.getGitOwner(), Response.Status.FORBIDDEN);
-        }
+        // Project-level authorization: creator/assignees/admin only (legacy projects
+        // with no recorded creator stay unrestricted).
+        requireProjectWriteAccess(projectId);
         // Container/deployment cleanup is best-effort: a missing or unreachable
         // container must not abort (and 500) the project deletion.
         if (deleteContainers) {
             try {
-                LOGGER.info("Deleting containers and deployments");
+                log.info("Deleting containers and deployments");
                 devModeResource.deleteDevMode(projectId, true);
                 containerResource.deleteContainer(projectId, ContainerType.devmode.name(), projectId);
                 containerResource.deleteContainer(projectId, ContainerType.packaged.name(), projectId);
                 infrastructureResource.deleteDeployment(null, projectId);
             } catch (Exception e) {
-                LOGGER.warn("Container/deployment cleanup failed for " + projectId + ": " + e.getMessage());
+                log.warn("Container/deployment cleanup failed for " + projectId + ": " + e.getMessage());
             }
         }
-        UserGitConfig gitUser = karavanCache.getUserGitConfig(username);
-        // delete from cache
+        // Deletion is LOCAL-ONLY (cache + database). The remote git repository is
+        // intentionally never touched: it keeps the full history, so the project
+        // can be re-imported later by attaching the same repository again.
         karavanCache.getProjectFiles(projectId).forEach(file -> karavanCache.deleteProjectFile(projectId, file.getName()));
         karavanCache.getProjectFilesCommited(projectId).forEach(file -> karavanCache.deleteProjectFileCommited(projectId, file.getName()));
         karavanCache.deleteProject(projectId);
         karavanCache.deleteProjectCommited(projectId);
-        // Remote cleanup is best-effort: the project is already removed locally, so
-        // a push failure (auth, network, deleted remote) must not fail the request.
-        if (hasRemote) {
-            try {
-                gitService.deleteProject(projectFolder, username, identity.getString("email"), gitUser);
-            } catch (Exception e) {
-                LOGGER.warn("Git remote cleanup failed for " + projectId + ": " + e.getMessage());
-            }
-        }
-        LOGGER.info("Project deleted");
+        log.info("Project {} deleted from Karavan (remote git untouched)", projectId);
     }
 
     @POST
@@ -170,7 +151,7 @@ public class ProjectResource extends AbstractApiResource {
             projectService.buildProject(projectFolder, tag, getIdentity().getString("username"));
             return Response.ok().entity(projectFolder).build();
         } catch (Exception e) {
-            LOGGER.error(e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
+            log.error(e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
             return Response.serverError().entity(e.getMessage()).build();
         }
     }
@@ -247,6 +228,16 @@ public class ProjectResource extends AbstractApiResource {
     @Path("/copy/{sourceProject}")
     public Response copy(@PathParam("sourceProject") String sourceProject, ProjectFolder projectFolder) {
         try {
+            // Same server-side stamping as create(): ownership and audit fields
+            // come from the authenticated identity, never from the client payload.
+            String username = getIdentity().getString("username");
+            if (username != null && projectFolder.getGitRepository() != null && !projectFolder.getGitRepository().isBlank()) {
+                projectFolder.setGitOwner(username);
+            } else {
+                projectFolder.setGitOwner(null);
+            }
+            projectFolder.setCreatedBy(username);
+            projectFolder.setCreatedAt(java.time.Instant.now().toEpochMilli());
             return Response.ok(projectService.copy(sourceProject, projectFolder)).build();
         } catch (Exception e) {
             return Response.serverError().entity(e.getMessage()).build();

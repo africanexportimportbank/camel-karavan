@@ -145,9 +145,9 @@ function DslElementComponent(props: Props) {
         const {step, prevStep, nextStep, parent, inSteps, inStepsLength} = props;
         const isSelected = isElementSelected();
         if (el) {
-            const header = Array.from(el.childNodes.values()).filter((n: any) => n.classList?.contains("header"))[0];
+            const header = Array.from(el.childNodes.values()).find((n: any) => n.classList?.contains("header"));
             if (header) {
-                const headerIcon: any = Array.from(header.childNodes.values()).filter((n: any) => n.classList?.contains("header-icon"))[0];
+                const headerIcon: any = Array.from(header.childNodes.values()).find((n: any) => n.classList?.contains("header-icon"));
                 // Store positions RELATIVE to the scrolling .flows container (measured in the
                 // same pass), not as viewport coordinates. This makes them scroll-invariant:
                 // the arrow layer's origin is always (0,0), so scrolling the canvas never

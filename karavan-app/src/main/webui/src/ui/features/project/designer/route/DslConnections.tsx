@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-import React, {ReactElement, useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
+import {ReactElement, useCallback, useEffect, useLayoutEffect, useRef, useState} from 'react';
 import './DslConnections.css';
 import {DslPosition, EventBus} from "../utils/EventBus";
 import {CamelUi} from "../utils/CamelUi";
@@ -82,7 +82,7 @@ export function DslConnections() {
 
     useEffect(() => {
         const integrations = getIntegrations(files);
-        const openApiFile = files.filter(f => f.name === 'openapi.json')?.at(0);
+        const openApiFile = files.find(f => f.name === 'openapi.json');
         const openApiJson = openApiFile?.code;
         const data = TopologyUtils.getIncomingLinkMap(integrations, openApiJson);
         setTons(data);

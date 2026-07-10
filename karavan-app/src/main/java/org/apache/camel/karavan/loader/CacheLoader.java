@@ -3,24 +3,24 @@ package org.apache.camel.karavan.loader;
 import io.vertx.core.json.JsonObject;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import org.apache.camel.karavan.cache.*;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
+import org.apache.camel.karavan.cache.KaravanCache;
+import org.apache.camel.karavan.model.*;
 import org.apache.camel.karavan.persistence.AccessCacheEntity;
 import org.apache.camel.karavan.persistence.PersistenceService;
 import org.apache.camel.karavan.persistence.ProjectCacheEntity;
-import org.jboss.logging.Logger;
 
+@Slf4j
 @ApplicationScoped
+@RequiredArgsConstructor(onConstructor_ = {@Inject})
 public class CacheLoader {
 
-    private static final Logger LOGGER = Logger.getLogger(CacheLoader.class);
-
-    @Inject
-    KaravanCache karavanCache;
-    @Inject
-    PersistenceService persistenceService;
+    private final KaravanCache karavanCache;
+    private final PersistenceService persistenceService;
 
     public void load() {
-        LOGGER.info("Starting Karavan Cache Hydration...");
+        log.info("Starting Karavan Cache Hydration...");
 
         var allEntities = persistenceService.getAll(ProjectCacheEntity.class);
 
@@ -40,14 +40,28 @@ public class CacheLoader {
                     karavanCache.saveProjectFile(file, null, false);
                 });
 
+        // Commited (Source view) state: with per-project git there is no startup
+        // re-import to rebuild it, so it hydrates from the DB like everything else.
+        allEntities.stream()
+                .filter(entity -> ProjectFolderCommited.class.getSimpleName().equals(entity.type))
+                .forEach(entity -> {
+                    JsonObject json = new JsonObject(entity.data);
+                    karavanCache.saveProjectCommited(json.mapTo(ProjectFolderCommited.class), false);
+                });
+
+        allEntities.stream()
+                .filter(entity -> ProjectFileCommited.class.getSimpleName().equals(entity.type))
+                .forEach(entity -> {
+                    JsonObject json = new JsonObject(entity.data);
+                    karavanCache.saveProjectFileCommited(json.mapTo(ProjectFileCommited.class), false);
+                });
+
         persistenceService.getAll(AccessCacheEntity.class).forEach(entity -> {
             JsonObject json = new JsonObject(entity.data);
             if (AccessUser.class.getSimpleName().equals(entity.type)) {
                 karavanCache.saveUser(json.mapTo(AccessUser.class), false);
             } else if (AccessRole.class.getSimpleName().equals(entity.type)) {
                 karavanCache.saveRole(json.mapTo(AccessRole.class), false);
-            } else if (AccessPassword.class.getSimpleName().equals(entity.type)) {
-                karavanCache.savePassword(json.mapTo(AccessPassword.class), false);
             } else if (UserGitConfig.class.getSimpleName().equals(entity.type)) {
                 karavanCache.saveUserGitConfig(json.mapTo(UserGitConfig.class), false);
             }
@@ -58,6 +72,6 @@ public class CacheLoader {
             karavanCache.saveAccessSession(json.mapTo(AccessSession.class), false);
         });
 
-        LOGGER.info("Karavan Cache Hydration complete.");
+        log.info("Karavan Cache Hydration complete.");
     }
 }
