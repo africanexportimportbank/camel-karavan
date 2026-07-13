@@ -20,7 +20,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import org.apache.camel.karavan.KaravanConstants;
 import org.apache.camel.karavan.cache.KaravanCache;
-import org.apache.camel.karavan.cache.PodContainerStatus;
+import org.apache.camel.karavan.model.PodContainerStatus;
 import org.apache.camel.karavan.listener.CamelStatusListener;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
