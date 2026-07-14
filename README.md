@@ -7,18 +7,18 @@
 ![License](https://img.shields.io/badge/License-Apache-orange.svg?style=for-the-badge&logo=apache)
 
 <h1 align="center" style="border-bottom: none">
-    Apache Camel Karavan
+    ARC — Afreximbank Route Composer
 </h1>
 
-**Apache Camel Karavan** is a **Low-Code Data Integration Platform** 
+**ARC (Afreximbank Route Composer)** is a **Low-Code Data Integration Platform**, built on Apache Camel Karavan.
 It simplifies the Apache Camel experience by visually designing and rapidly deploying integration microservices.
 
-* Full power of Apache Camel through Visual Tool
+* Full power of Apache Camel through a Visual Tool
 * From Low-code use-cases to Pro-code projects
 * Powered by 10+ years of Community Intelligence
 
 <p align="center">
-  <img src="images/karavan-clouds.png"  alt="Apache Camel Karavan" />
+  <img src="images/karavan-clouds.png"  alt="ARC — Afreximbank Route Composer" />
 </p>
 
 ## Features

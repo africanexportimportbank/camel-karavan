@@ -69,7 +69,8 @@ public class StartupLoader implements HealthCheck {
     }
 
     void onStart(@Observes StartupEvent ev) throws Exception {
-        log.info("Starting " + ConfigService.getAppName() + " in " + config.environment() + " env in " + (ConfigService.inKubernetes() ? "Kubernetes" : "Docker"));
+        // Log the human-facing brand (title), not appName (a k8s label identifier).
+        log.info("Starting " + config.title() + " in " + config.environment() + " env in " + (ConfigService.inKubernetes() ? "Kubernetes" : "Docker"));
         if (!ConfigService.inKubernetes() && !dockerService.checkDocker()) {
             Quarkus.asyncExit();
         } else {

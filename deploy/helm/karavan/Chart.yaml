@@ -1,6 +1,6 @@
 apiVersion: v2
 name: karavan
-description: Self-contained local install of Apache Camel Karavan (app + PostgreSQL) for Docker Desktop Kubernetes
+description: Self-contained install of ARC — Afreximbank Route Composer (app + PostgreSQL), built on Apache Camel Karavan
 type: application
 version: 0.1.0
 appVersion: "4.18.2"

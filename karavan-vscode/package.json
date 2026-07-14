@@ -1,9 +1,9 @@
 {
   "name": "karavan",
   "publisher": "camel-karavan",
-  "displayName": "Karavan",
+  "displayName": "ARC — Afreximbank Route Composer",
   "icon": "icons/karavan.png",
-  "description": "Integration Toolkit for Apache Camel",
+  "description": "ARC (Afreximbank Route Composer) — Integration Toolkit for Apache Camel, built on Karavan",
   "version": "4.18.2",
   "license": "Apache-2.0",
   "preview": false,
@@ -59,7 +59,7 @@
   "browser": "./dist/extension.js",
   "contributes": {
     "configuration": {
-      "title": "Karavan",
+      "title": "ARC — Afreximbank Route Composer",
       "properties": {
         "camel.version": {
           "type": "string",
@@ -430,56 +430,56 @@
     "commands": [
       {
         "command": "karavan.topology",
-        "title": "Karavan: Show Topology",
+        "title": "ARC: Show Topology",
         "icon": "$(type-hierarchy)"
       },
       {
         "command": "karavan.create-yaml",
-        "title": "Karavan: Create Integration",
+        "title": "ARC: Create Integration",
         "icon": "$(add)"
       },
       {
         "command": "karavan.create-kamelet",
-        "title": "Karavan: Create Kamelet",
+        "title": "ARC: Create Kamelet",
         "icon": "$(add)"
       },
       {
         "command": "karavan.create-application",
-        "title": "Karavan: Create Application",
+        "title": "ARC: Create Application",
         "icon": "$(symbol-property)"
       },
       {
         "command": "karavan.open",
-        "title": "Karavan: Open",
+        "title": "ARC: Open",
         "icon": "$(wand)"
       },
       {
         "command": "karavan.open-file",
-        "title": "Karavan: Open editor"
+        "title": "ARC: Open editor"
       },
       {
         "command": "karavan.run-project-jbang",
-        "title": "Karavan: JBang run",
+        "title": "ARC: JBang run",
         "icon": "$(rocket)"
       },
       {
         "command": "karavan.run-project-runtime",
-        "title": "Karavan: Runtime run",
+        "title": "ARC: Runtime run",
         "icon": "$(run)"
       },
       {
         "command": "karavan.jbang-export",
-        "title": "Karavan: Export",
+        "title": "ARC: Export",
         "icon": "$(export)"
       },
       {
         "command": "karavan.deploy",
-        "title": "Karavan: Deploy",
+        "title": "ARC: Deploy",
         "icon": "$(layers)"
       },
       {
         "command": "karavan.generate-rest",
-        "title": "Karavan: Generate REST API"
+        "title": "ARC: Generate REST API"
       },
       {
         "command": "karavan.download-image",

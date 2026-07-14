@@ -86,9 +86,9 @@ export const LoginPage: React.FunctionComponent = () => {
                 <div className="brand-content">
                     <div className="brand-name">
                         <div>
-                            <div className="tagline1 gradient-text-blue">Apache</div>
-                            <div className="tagline1 gradient-text-blue-gold">Camel</div>
-                            <div className="tagline1 gradient-text-gold">Karavan</div>
+                            <div className="tagline1 gradient-text-blue">Afreximbank</div>
+                            <div className="tagline1 gradient-text-blue-gold">Route</div>
+                            <div className="tagline1 gradient-text-gold">Composer</div>
                         </div>
                     </div>
                 </div>
